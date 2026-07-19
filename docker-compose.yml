@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    image: github-backup-panel:latest
+    container_name: github-backup-panel
+    ports:
+      - "${HOST_PORT:-8765}:8000"
+    volumes:
+      # All state (db, encryption key, backups) lives here. For CasaOS this can
+      # be switched to a named volume or a specific host path later.
+      - ./data:/data
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
+      # Optional: pin a Fernet key so encrypted tokens stay portable across hosts.
+      # SECRET_KEY: ${SECRET_KEY:-}
+    restart: unless-stopped

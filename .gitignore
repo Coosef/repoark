@@ -1,0 +1,23 @@
+# Runtime data (database, encryption key, actual backups)
+data/
+.env
+*.db
+*.key
+secret.key
+
+# macOS
+.DS_Store
+
+# Design mockups (reference material, not part of the app)
+GitHub entegrasyonlu tasarım/
+GitHub entegrasyonlu tasarım.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Node / frontend build
+node_modules/
+frontend/dist/
