@@ -10,9 +10,13 @@ RUN npm run build
 
 # ---- Stage 2: Python runtime that serves API + built panel ----
 FROM python:3.12-slim AS runtime
+# Version is passed in at build time (see the CI workflow / VERSION file) and
+# surfaced in the panel so users can confirm which version is running.
+ARG APP_VERSION=dev
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    DATA_DIR=/data
+    DATA_DIR=/data \
+    APP_VERSION=$APP_VERSION
 
 # git + git-lfs: required by the github-backup engine to clone repos.
 # rclone: used to sync backups to S3-compatible remote destinations.

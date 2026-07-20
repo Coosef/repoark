@@ -51,6 +51,8 @@ export const api = {
   deleteAccount: (id) => req("DELETE", `/api/accounts/${id}`),
   deleted: (id) => req("GET", `/api/accounts/${id}/deleted`),
 
+  health: () => req("GET", "/api/health"),
+
   // jobs
   listJobs: () => req("GET", "/api/jobs"),
   createJob: (job) => req("POST", "/api/jobs", job),

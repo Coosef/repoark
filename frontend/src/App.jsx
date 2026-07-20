@@ -44,6 +44,7 @@ export default function App() {
   const [autoDecided, setAutoDecided] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
+  const [version, setVersion] = useState("");
   const [theme, setTheme] = useState(() => localStorage.getItem("rk-theme") || "light");
   const { lang, setLang, t } = useLang();
 
@@ -68,6 +69,7 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
   useEffect(() => { api.authStatus().then((s) => setAuthEnabled(s.enabled)).catch(() => {}); }, []);
+  useEffect(() => { api.health().then((h) => setVersion(h.version || "")).catch(() => {}); }, []);
 
   // First run: auto-open the setup wizard when no account is connected yet,
   // unless the user ticked "don't show again". Decided once per session.
@@ -175,6 +177,7 @@ export default function App() {
             </div>
           </button>
         )}
+        {version && <div className="side-version">v{version}</div>}
       </aside>
 
       <main className="main">

@@ -36,12 +36,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Read version
+        id: ver
+        run: echo "v=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/coosef/repoark:latest
+          build-args: |
+            APP_VERSION=${{ steps.ver.outputs.v }}
+          tags: |
+            ghcr.io/coosef/repoark:latest
+            ghcr.io/coosef/repoark:${{ steps.ver.outputs.v }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

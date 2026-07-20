@@ -145,6 +145,27 @@ GitHub → **Settings → Developer settings → Personal access tokens**
 
 ---
 
+## 🔄 Güncelleme & sürümler
+
+İmaj hem `:latest` hem sabit sürüm etiketiyle yayınlanır (ör. `:1.0.0`). Çalışan
+sürüm panelin sol alt köşesinde görünür — güncellemenin oturduğunu böyle
+doğrularsın.
+
+**En temiz güncelleme** (yeni imajı kesin çeker):
+```bash
+docker pull ghcr.io/coosef/repoark:latest   # veya belirli bir sürüm
+docker rm -f repoark
+docker run -d --name repoark -p 8765:8000 -v /DATA/AppData/repoark/data:/data \
+  -e TZ=Europe/Istanbul --restart unless-stopped ghcr.io/coosef/repoark:latest
+```
+
+> CasaOS arayüzünde uygulamanın compose'undaki `image:` satırını yeni sürüme
+> (ör. `:1.0.0`) çevirip kaydetmek de yeni imajı çektirir — `:latest` bazen
+> yerel önbellekten yeniden kullanıldığı için sürüm etiketi daha güvenilirdir.
+> Veriler `/DATA/AppData/repoark/data` klasöründe durduğu için hiçbir ayar kaybolmaz.
+
+---
+
 ## ⚙️ Yapılandırma
 
 `.env` (hepsi isteğe bağlı):

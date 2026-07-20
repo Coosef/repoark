@@ -5,6 +5,7 @@ path serves the built React panel (with SPA fallback to index.html).
 """
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -20,6 +21,10 @@ from .routers import auth as auth_router
 # The frontend build is copied here in the Docker image (see Dockerfile).
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
+# Baked in at image build time (--build-arg APP_VERSION); shown in the panel so
+# users can see at a glance which version is running after an update.
+APP_VERSION = os.environ.get("APP_VERSION", "dev")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,7 +36,7 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown()
 
 
-app = FastAPI(title="GitHub Backup Panel", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="GitHub Backup Panel", version=APP_VERSION, lifespan=lifespan)
 
 
 # --- Panel access protection ---
@@ -64,7 +69,7 @@ app.include_router(settings.router)
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": APP_VERSION}
 
 
 # --- Static frontend (mounted last so /api/* wins) ---
