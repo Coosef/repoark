@@ -15,6 +15,7 @@ const TABS = [
   ["gists", "Gist'ler"],
   ["social", "Sosyal"],
   ["snapshots", "Snapshot'lar"],
+  ["storage", "Depolama"],
 ];
 
 const stars = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(".0", "") + "k" : (n ?? 0));
@@ -53,6 +54,17 @@ export default function Content({ accountId, onMsg }) {
       .catch(() => active && setLoaded({ tab, data: null }));
     return () => { active = false; };
   }, [tab, accountId, bump]);
+
+  async function pruneOne(name, sizeBytes) {
+    if (!confirm(t("storage.delConfirm", { name, size: bytes(sizeBytes) }))) return;
+    try {
+      const r = await api.pruneStorage(accountId, name);
+      onMsg && onMsg(t("storage.freed", { size: bytes(r.freed_bytes) }));
+      setBump((b) => b + 1);
+    } catch (e) {
+      onMsg && onMsg(t("toast.error", { msg: e.message }));
+    }
+  }
 
   async function delNames(names) {
     if (!names.length) return;
@@ -243,6 +255,26 @@ export default function Content({ accountId, onMsg }) {
             </div>
           ))}
           {(data || []).length === 0 && <div className="row-item"><span className="muted">{t("content.noSnaps")}</span></div>}
+        </div>
+      )}
+
+      {ready && tab === "storage" && (
+        <div className="group">
+          {(data || []).map((s) => (
+            <div className="frow" key={s.name}>
+              <div className="folder-ic"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M3 7l1.4-3h5.2l1.4 2h8a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg></div>
+              <div className="row-body">
+                <div className="row-title">{s.name}{s.protected && <span className="badge badge-success" style={{ marginLeft: 8 }}>✓</span>}</div>
+                <div className="row-desc">{bytes(s.size_bytes)}</div>
+              </div>
+              {!s.protected && (
+                <button className="row-del" title={t("common.delete")} onClick={() => pruneOne(s.name, s.size_bytes)}>
+                  <svg width="16" height="16" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6M14 11v6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                </button>
+              )}
+            </div>
+          ))}
+          {(data || []).length === 0 && <div className="row-item"><span className="muted">{t("content.noRepos")}</span></div>}
         </div>
       )}
     </div>

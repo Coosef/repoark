@@ -77,6 +77,10 @@ class DeleteReposBody(BaseModel):
     names: list[str] = []    # backed-up repo folder names to permanently delete
 
 
+class PruneBody(BaseModel):
+    name: str = ""           # top-level dir under current/ to permanently delete
+
+
 class LoginBody(BaseModel):
     password: str = ""
 

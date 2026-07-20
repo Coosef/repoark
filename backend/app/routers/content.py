@@ -17,9 +17,11 @@ from sqlmodel import Session, select
 from .. import config, crypto, github, health
 from ..db import get_session
 from ..models import Account, Job, Run
-from ..schemas import DeleteReposBody
+from ..schemas import DeleteReposBody, PruneBody
 
 _SAFE_NAME = re.compile(r"^[\w.\-]+$")   # backed-up repo folder names
+# Core backup data that the storage-prune endpoint must never delete.
+_PROTECTED_DIRS = {"repositories", "account", "profile"}
 
 router = APIRouter(prefix="/api/accounts", tags=["content"])
 
@@ -205,6 +207,46 @@ def repos(account_id: int, session: Session = Depends(get_session)):
                         "archived": None, "stars": None, "full_name": None})
     out.sort(key=lambda r: r["size_bytes"], reverse=True)
     return out
+
+
+@router.get("/{account_id}/storage")
+def storage_breakdown(account_id: int, session: Session = Depends(get_session)):
+    """Every top-level folder under current/ with its real size on disk.
+
+    Surfaces space that the repo list can't show — e.g. `starred/`, where the
+    engine's --all-starred clones land. Sorted largest first.
+    """
+    account = _account(account_id, session)
+    cur = _current(account)
+    if not cur.is_dir():
+        return []
+    out = [
+        {"name": d.name, "size_bytes": _dir_size(d), "protected": d.name in _PROTECTED_DIRS}
+        for d in cur.iterdir() if d.is_dir()
+    ]
+    out.sort(key=lambda x: x["size_bytes"], reverse=True)
+    return out
+
+
+@router.post("/{account_id}/storage/prune")
+def prune_storage(account_id: int, payload: PruneBody,
+                  session: Session = Depends(get_session)):
+    """Permanently delete one top-level folder under current/ (e.g. starred/).
+
+    Refuses the protected core folders so a user can't wipe their own repos or
+    metadata. Path-guarded to direct children of current/.
+    """
+    account = _account(account_id, session)
+    cur = (_current(account)).resolve()
+    name = (payload.name or "").strip()
+    if not _SAFE_NAME.match(name) or name in _PROTECTED_DIRS:
+        raise HTTPException(400, "Bu klasör silinemez")
+    d = (cur / name).resolve()
+    if d.parent != cur or not d.is_dir():
+        raise HTTPException(404, "Klasör bulunamadı")
+    freed = _dir_size(d)
+    shutil.rmtree(d, ignore_errors=True)
+    return {"freed_bytes": freed}
 
 
 @router.post("/{account_id}/repos/delete")
