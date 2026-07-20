@@ -4,6 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Docker-tek%20imaj-2496ED?logo=docker&logoColor=white" alt="Docker" />
+  <a href="https://github.com/Coosef/repoark/pkgs/container/repoark"><img src="https://img.shields.io/badge/ghcr.io-hazır%20imaj-2496ED?logo=github&logoColor=white" alt="Container image" /></a>
   <img src="https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Panel-React%2018-61DAFB?logo=react&logoColor=black" alt="React" />
   <img src="https://img.shields.io/badge/self--hosted-CasaOS%20uyumlu-6c5ce7" alt="Self-hosted" />
@@ -61,7 +62,72 @@ sunucuda, NAS'ta veya **CasaOS** üzerinde dakikalar içinde ayağa kalkar.
 
 ---
 
-## 🚀 Hızlı başlangıç
+## 🚀 Kurulum
+
+Hazır imaj **`ghcr.io/coosef/repoark:latest`** olarak yayınlanır — Intel (`amd64`) ve ARM
+(`arm64`) için. Aşağıdaki üç yoldan biriyle dakikalar içinde kur.
+
+### Seçenek 1 — Hazır imaj (en hızlı, derleme yok)
+
+```bash
+docker run -d --name repoark \
+  -p 8765:8000 \
+  -v repoark-data:/data \
+  -e TZ=Europe/Istanbul \
+  --restart unless-stopped \
+  ghcr.io/coosef/repoark:latest
+```
+
+Panel → **http://localhost:8765**
+
+### Seçenek 2 — CasaOS (arayüzden, terminalsiz)
+
+CasaOS'ta **sağ üst "+" → Import → Docker Compose** sekmesine şunu yapıştır ve **Submit**'e bas:
+
+```yaml
+name: repoark
+services:
+  repoark:
+    image: ghcr.io/coosef/repoark:latest
+    container_name: repoark
+    ports:
+      - "8765:8000"
+    volumes:
+      - /DATA/AppData/repoark/data:/data
+    environment:
+      - TZ=Europe/Istanbul
+    restart: unless-stopped
+    x-casaos:
+      volumes:
+        - container: /data
+          description:
+            en_us: "Yedekler, veritabanı ve şifreleme anahtarı"
+      ports:
+        - container: "8000"
+          description:
+            en_us: "Web panel"
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: repoark
+  author: Coosef
+  developer: Coosef
+  category: Backup
+  icon: https://raw.githubusercontent.com/Coosef/repoark/main/frontend/public/icon-512.png
+  title:
+    en_us: RepoArk
+  tagline:
+    en_us: Kendi sunucunda GitHub yedekleme
+  description:
+    en_us: Panelden yönetilen GitHub yedekleme — repolar, yıldızlar, gist, issue.
+  port_map: "8765"
+```
+
+CasaOS masaüstüne **RepoArk** ikonu düşer; tıkla, panel açılır. (Port doluysa
+`"8765:8000"` satırındaki soldaki sayıyı değiştir.)
+
+### Seçenek 3 — Kaynaktan derle (Docker Compose)
 
 ```bash
 git clone https://github.com/Coosef/repoark.git
@@ -70,12 +136,10 @@ cp .env.example .env          # (isteğe bağlı) port / timezone ayarı
 docker compose up -d --build
 ```
 
-Panel → **http://localhost:8765**
+---
 
-Ardından panelden bir GitHub PAT'i ile hesabını bağla, neyi yedekleyeceğini seç ve
-kurulum sihirbazını takip et.
-
-### PAT oluşturma
+### İlk açılış: GitHub PAT
+Kurulum sihirbazı bir **Personal Access Token** ister:
 GitHub → **Settings → Developer settings → Personal access tokens**
 Önerilen izinler: `repo`, `gist`, `read:user`, `read:org`.
 
