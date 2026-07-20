@@ -69,7 +69,7 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
   useEffect(() => { api.authStatus().then((s) => setAuthEnabled(s.enabled)).catch(() => {}); }, []);
-  useEffect(() => { api.health().then((h) => setVersion(h.version || "")).catch(() => {}); }, []);
+  useEffect(() => { api.version().then((h) => setVersion(h.version || "")).catch(() => {}); }, []);
 
   // First run: auto-open the setup wizard when no account is connected yet,
   // unless the user ticked "don't show again". Decided once per session.

@@ -51,7 +51,7 @@ export const api = {
   deleteAccount: (id) => req("DELETE", `/api/accounts/${id}`),
   deleted: (id) => req("GET", `/api/accounts/${id}/deleted`),
 
-  health: () => req("GET", "/api/health"),
+  version: () => req("GET", "/api/health"),
 
   // jobs
   listJobs: () => req("GET", "/api/jobs"),
@@ -69,8 +69,8 @@ export const api = {
   summary: (id) => req("GET", `/api/accounts/${id}/summary`),
   repos: (id) => req("GET", `/api/accounts/${id}/repos`),
   deleteRepos: (id, names) => req("POST", `/api/accounts/${id}/repos/delete`, { names }),
-  storage: (id) => req("GET", `/api/accounts/${id}/storage`),
-  pruneStorage: (id, name) => req("POST", `/api/accounts/${id}/storage/prune`, { name }),
+  dirStorage: (id) => req("GET", `/api/accounts/${id}/storage`),
+  pruneDir: (id, name) => req("POST", `/api/accounts/${id}/storage/prune`, { name }),
   starred: (id) => req("GET", `/api/accounts/${id}/starred`),
   starredLive: (id) => req("GET", `/api/accounts/${id}/starred-live`),
   gists: (id) => req("GET", `/api/accounts/${id}/gists`),

@@ -49,7 +49,8 @@ export default function Content({ accountId, onMsg }) {
     setQ("");
     setSelMode(false);
     setSel(new Set());
-    api[tab](accountId)
+    const load = tab === "storage" ? api.dirStorage : api[tab];
+    load(accountId)
       .then((data) => active && setLoaded({ tab, data }))
       .catch(() => active && setLoaded({ tab, data: null }));
     return () => { active = false; };
@@ -58,7 +59,7 @@ export default function Content({ accountId, onMsg }) {
   async function pruneOne(name, sizeBytes) {
     if (!confirm(t("storage.delConfirm", { name, size: bytes(sizeBytes) }))) return;
     try {
-      const r = await api.pruneStorage(accountId, name);
+      const r = await api.pruneDir(accountId, name);
       onMsg && onMsg(t("storage.freed", { size: bytes(r.freed_bytes) }));
       setBump((b) => b + 1);
     } catch (e) {
