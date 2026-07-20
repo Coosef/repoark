@@ -23,7 +23,13 @@ export default function Wizard({ onClose, onDone }) {
   const [freq, setFreq] = useState("daily");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [dontShow, setDontShow] = useState(() => localStorage.getItem("rk-wizard-dismissed") === "1");
   const setSc = (k, v) => setScope((s) => ({ ...s, [k]: v }));
+  function toggleDont(v) {
+    setDontShow(v);
+    if (v) localStorage.setItem("rk-wizard-dismissed", "1");
+    else localStorage.removeItem("rk-wizard-dismissed");
+  }
 
   async function connect() {
     setBusy(true); setErr("");
@@ -132,6 +138,11 @@ export default function Wizard({ onClose, onDone }) {
           </div>
         )}
       </div>
+
+      <label className="wiz-dontshow">
+        <input type="checkbox" checked={dontShow} onChange={(e) => toggleDont(e.target.checked)} />
+        {t("wiz.dontShowAgain")}
+      </label>
     </div>
   );
 }

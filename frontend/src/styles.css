@@ -420,6 +420,8 @@ a.frow:hover { text-decoration: none; }
 }
 .wiz-skip { position: absolute; top: 20px; right: 24px; background: none; color: var(--muted); font-weight: 500; }
 .wiz-skip:hover { background: var(--fill); }
+.wiz-dontshow { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13.5px; cursor: pointer; user-select: none; }
+.wiz-dontshow input { width: auto; margin: 0; cursor: pointer; }
 .wiz-dots { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
 .wiz-dot { width: 24px; height: 5px; border-radius: 3px; background: var(--fill2); transition: background .2s; }
 .wiz-dot.on { background: var(--accent); }

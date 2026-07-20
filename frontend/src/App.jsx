@@ -40,13 +40,15 @@ export default function App() {
   const [msg, setMsg] = useState("");
   const [deletedCount, setDeletedCount] = useState(0);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [autoDecided, setAutoDecided] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("rk-theme") || "light");
   const { lang, setLang, t } = useLang();
 
   const refresh = useCallback(() => {
-    api.listAccounts().then(setAccounts).catch(() => {});
+    api.listAccounts().then((a) => { setAccounts(a); setLoaded(true); }).catch(() => {});
     api.listJobs().then(setJobs).catch(() => {});
   }, []);
 
@@ -66,6 +68,16 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
   useEffect(() => { api.authStatus().then((s) => setAuthEnabled(s.enabled)).catch(() => {}); }, []);
+
+  // First run: auto-open the setup wizard when no account is connected yet,
+  // unless the user ticked "don't show again". Decided once per session.
+  useEffect(() => {
+    if (!loaded || autoDecided) return;
+    setAutoDecided(true);
+    if (accounts.length === 0 && localStorage.getItem("rk-wizard-dismissed") !== "1") {
+      setWizardOpen(true);
+    }
+  }, [loaded, accounts, autoDecided]);
 
   async function logout() {
     try { await api.logout(); } catch { /* ignore */ }
