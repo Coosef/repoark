@@ -1,0 +1,14 @@
+# Keep the Docker build context lean and free of local state/secrets.
+.git
+.gitignore
+data/
+.env
+*.db
+*.key
+secret.key
+.DS_Store
+**/node_modules
+frontend/dist
+**/__pycache__
+*.pyc
+docs/
