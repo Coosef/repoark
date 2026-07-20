@@ -76,11 +76,16 @@ if (STATIC_DIR / "assets").is_dir():
 def spa(full_path: str):
     # Serve real files that live at the static root (manifest, service worker,
     # icons, favicon) directly; everything else falls back to the SPA shell.
+    # index.html and the service worker must always be revalidated so app
+    # updates reach users without manual cache clearing; hashed assets under
+    # /assets keep their default (immutable) caching.
+    no_cache = {"Cache-Control": "no-cache"}
     if full_path:
         target = (STATIC_DIR / full_path).resolve()
         if str(target).startswith(str(STATIC_DIR.resolve())) and target.is_file():
-            return FileResponse(target)
+            headers = no_cache if target.name == "sw.js" else None
+            return FileResponse(target, headers=headers)
     index = STATIC_DIR / "index.html"
     if index.is_file():
-        return FileResponse(index)
+        return FileResponse(index, headers=no_cache)
     return {"detail": "Frontend not built. Run the Vite dev server or build the image."}

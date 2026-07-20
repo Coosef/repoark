@@ -1,7 +1,7 @@
 // Minimal service worker: enables "install to home screen" and caches the app
 // shell for fast loads. API calls are always network-only (never cached) so the
 // panel never shows stale backup data.
-const CACHE = "repoark-shell-v1";
+const CACHE = "repoark-shell-v2";
 const SHELL = ["/", "/icon.svg", "/icon-192.png", "/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
@@ -18,9 +18,14 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.pathname.startsWith("/api/")) return; // never cache the API
-  // Network-first for navigations (fresh index.html), cache fallback offline.
+  // Navigations always fetch a fresh index.html straight from the server
+  // (bypassing the HTTP cache) so app updates roll out immediately; the cached
+  // shell is only used as an offline fallback.
   if (e.request.mode === "navigate") {
-    e.respondWith(fetch(e.request).catch(() => caches.match("/")));
+    e.respondWith(
+      fetch(e.request.url, { cache: "no-store", credentials: "same-origin" })
+        .catch(() => caches.match("/"))
+    );
     return;
   }
   // Cache-first for static assets.
