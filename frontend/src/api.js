@@ -66,6 +66,7 @@ export const api = {
   // backup content (per account)
   summary: (id) => req("GET", `/api/accounts/${id}/summary`),
   repos: (id) => req("GET", `/api/accounts/${id}/repos`),
+  deleteRepos: (id, names) => req("POST", `/api/accounts/${id}/repos/delete`, { names }),
   starred: (id) => req("GET", `/api/accounts/${id}/starred`),
   starredLive: (id) => req("GET", `/api/accounts/${id}/starred-live`),
   gists: (id) => req("GET", `/api/accounts/${id}/gists`),

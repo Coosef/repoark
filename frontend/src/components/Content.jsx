@@ -19,7 +19,7 @@ const TABS = [
 
 const stars = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(".0", "") + "k" : (n ?? 0));
 
-export default function Content({ accountId }) {
+export default function Content({ accountId, onMsg }) {
   const { t } = useLang();
   const [tab, setTab] = useState("repos");
   // loaded holds {tab, data} so we never render one tab's markup against
@@ -30,7 +30,10 @@ export default function Content({ accountId }) {
   const [gist, setGist] = useState(null);       // {id, description} open gist browser
   const [snapshot, setSnapshot] = useState(null); // open snapshot detail
   const [gone, setGone] = useState(new Set());  // repos deleted from GitHub
-  const [repoFilter, setRepoFilter] = useState("all"); // all | own | starred
+  const [repoFilter, setRepoFilter] = useState("all"); // all | own | starred | other
+  const [selMode, setSelMode] = useState(false);       // multi-select for bulk delete
+  const [sel, setSel] = useState(new Set());           // selected repo names
+  const [bump, setBump] = useState(0);                 // re-fetch trigger after delete
 
   useEffect(() => {
     if (!accountId) return;
@@ -43,11 +46,30 @@ export default function Content({ accountId }) {
     let active = true;
     setLoaded(null);
     setQ("");
+    setSelMode(false);
+    setSel(new Set());
     api[tab](accountId)
       .then((data) => active && setLoaded({ tab, data }))
       .catch(() => active && setLoaded({ tab, data: null }));
     return () => { active = false; };
-  }, [tab, accountId]);
+  }, [tab, accountId, bump]);
+
+  async function delNames(names) {
+    if (!names.length) return;
+    const msg = names.length === 1
+      ? t("content.delConfirm", { name: names[0] })
+      : t("content.delBulk", { n: names.length });
+    if (!confirm(msg)) return;
+    try {
+      const r = await api.deleteRepos(accountId, names);
+      onMsg && onMsg(t("content.deleted", { n: r.deleted, size: bytes(r.freed_bytes) }));
+      setSel(new Set());
+      setSelMode(false);
+      setBump((b) => b + 1);
+    } catch (e) {
+      onMsg && onMsg(t("toast.error", { msg: e.message }));
+    }
+  }
 
   if (!accountId) return <Empty>Önce bir hesap bağla.</Empty>;
   if (repo) return <RepoBrowser accountId={accountId} repo={repo.name} initialPath={repo.path} onClose={() => setRepo(null)} />;
@@ -77,38 +99,73 @@ export default function Content({ accountId }) {
       {tab !== "search" && !ready && <Empty>{t("common.loading")}</Empty>}
 
       {ready && tab === "repos" && (() => {
-        const hasStarred = (data || []).some((r) => r.kind === "starred");
-        const rows = (data || [])
-          .filter((r) => filter(r.name))
-          .filter((r) => repoFilter === "all" || r.kind === repoFilter);
-        const ownCount = (data || []).filter((r) => r.kind !== "starred").length;
-        const starCount = (data || []).length - ownCount;
+        const all = data || [];
+        const kind = (r) => r.kind || "own";
+        const hasExtra = all.some((r) => kind(r) === "starred" || kind(r) === "other");
+        const count = (k) => all.filter((r) => kind(r) === k).length;
+        const rows = all
+          .filter((r) => filter(r.name) || filter(r.full_name))
+          .filter((r) => repoFilter === "all" || kind(r) === repoFilter);
+        const rowNames = rows.map((r) => r.name);
+        const allSel = rowNames.length > 0 && rowNames.every((n) => sel.has(n));
+        const toggle = (name) => setSel((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; });
+        const seg = (k, label) => <button className={repoFilter === k ? "on" : ""} onClick={() => setRepoFilter(k)}>{label}</button>;
+        const amber = { marginLeft: 8, background: "var(--amberT)", color: "var(--amber)" };
         return (
           <>
-            {hasStarred && (
-              <div className="seg" style={{ marginBottom: 12 }}>
-                <button className={repoFilter === "all" ? "on" : ""} onClick={() => setRepoFilter("all")}>{t("content.filterAll")} {(data || []).length}</button>
-                <button className={repoFilter === "own" ? "on" : ""} onClick={() => setRepoFilter("own")}>{t("content.filterOwn")} {ownCount}</button>
-                <button className={repoFilter === "starred" ? "on" : ""} onClick={() => setRepoFilter("starred")}>⭐ {t("content.filterStarred")} {starCount}</button>
-              </div>
-            )}
-            <div className="group">
-              {rows.map((r) => (
-                <div className="frow" key={r.name} onClick={() => setRepo({ name: r.name })}>
-                  {r.kind === "starred"
-                    ? <div className="isq isq-amber">⭐</div>
-                    : <div className="folder-ic"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M3 7l1.4-3h5.2l1.4 2h8a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg></div>}
-                  <div className="row-body">
-                    <div className="row-title">
-                      {r.kind === "starred" && r.full_name ? r.full_name : r.name}
-                      {r.kind === "starred" && <span className="badge" style={{ marginLeft: 8, background: "var(--amberT)", color: "var(--amber)" }}>{t("content.starredTag")}</span>}
-                      {gone.has(r.name) && <span className="badge badge-success" style={{ marginLeft: 8 }}>{t("content.vault")}</span>}
-                    </div>
-                    <div className="row-desc">{[bytes(r.size_bytes), r.language, r.private ? t("content.private") : null, gone.has(r.name) ? t("content.onlyBackup") : null].filter(Boolean).join(" · ")}</div>
-                  </div>
-                  <span className="chev">›</span>
+            <div className="row spread" style={{ marginBottom: 12, gap: 8, flexWrap: "wrap" }}>
+              {hasExtra ? (
+                <div className="seg">
+                  {seg("all", `${t("content.filterAll")} ${all.length}`)}
+                  {seg("own", `${t("content.filterOwn")} ${count("own")}`)}
+                  {count("starred") > 0 && seg("starred", `⭐ ${t("content.filterStarred")} ${count("starred")}`)}
+                  {count("other") > 0 && seg("other", `${t("content.filterOther")} ${count("other")}`)}
                 </div>
-              ))}
+              ) : <span />}
+              <div className="row" style={{ gap: 10 }}>
+                {selMode ? (
+                  <>
+                    <button className="link" onClick={() => setSel(new Set(allSel ? [] : rowNames))}>{t("content.selectAll")}</button>
+                    <button className="stop-btn" disabled={sel.size === 0} onClick={() => delNames([...sel])}>{t("common.delete")} ({sel.size})</button>
+                    <button className="link" onClick={() => { setSelMode(false); setSel(new Set()); }}>{t("common.cancel")}</button>
+                  </>
+                ) : (
+                  all.length > 0 && <button className="link" onClick={() => setSelMode(true)}>{t("content.select")}</button>
+                )}
+              </div>
+            </div>
+            <div className="group">
+              {rows.map((r) => {
+                const k = kind(r);
+                const checked = sel.has(r.name);
+                return (
+                  <div className={`frow ${selMode && checked ? "sel" : ""}`} key={r.name}
+                    onClick={() => selMode ? toggle(r.name) : setRepo({ name: r.name })}>
+                    {selMode
+                      ? <input type="checkbox" checked={checked} readOnly style={{ width: "auto", pointerEvents: "none" }} />
+                      : k === "starred"
+                        ? <div className="isq isq-amber">⭐</div>
+                        : k === "other"
+                          ? <div className="isq" style={{ background: "var(--amberT)", color: "var(--amber)" }}>?</div>
+                          : <div className="folder-ic"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M3 7l1.4-3h5.2l1.4 2h8a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg></div>}
+                    <div className="row-body">
+                      <div className="row-title">
+                        {k === "starred" && r.full_name ? r.full_name : r.name}
+                        {k === "starred" && <span className="badge" style={amber}>{t("content.starredTag")}</span>}
+                        {k === "other" && <span className="badge" style={amber}>{t("content.filterOther")}</span>}
+                        {gone.has(r.name) && <span className="badge badge-success" style={{ marginLeft: 8 }}>{t("content.vault")}</span>}
+                      </div>
+                      <div className="row-desc">{[bytes(r.size_bytes), r.language, r.private ? t("content.private") : null, gone.has(r.name) ? t("content.onlyBackup") : null].filter(Boolean).join(" · ")}</div>
+                    </div>
+                    {!selMode && (
+                      <button className="row-del" title={t("common.delete")} onClick={(e) => { e.stopPropagation(); delNames([r.name]); }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6M14 11v6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                      </button>
+                    )}
+                    {!selMode && <span className="chev">›</span>}
+                  </div>
+                );
+              })}
               {rows.length === 0 && <div className="row-item"><span className="muted">{t("content.noRepos")}</span></div>}
             </div>
           </>

@@ -199,7 +199,7 @@ export default function App() {
           {tab === "jobs" && <Jobs jobs={jobs} accounts={accounts} editing={editing} setEditing={setEditing} onRefresh={refresh} onMsg={setMsg} onShowHistory={showHistory} />}
           {tab === "timeline" && <Timeline accountId={activeAccount} />}
           {tab === "kasa" && <Kasa accountId={activeAccount} onMsg={setMsg} />}
-          {tab === "content" && <Content accountId={activeAccount} />}
+          {tab === "content" && <Content accountId={activeAccount} onMsg={setMsg} />}
           {tab === "history" && <History jobs={jobs} focusJobId={historyFocus} />}
           {tab === "settings" && <Settings accounts={accounts} onMsg={setMsg} theme={theme} setTheme={setTheme} />}
         </div>

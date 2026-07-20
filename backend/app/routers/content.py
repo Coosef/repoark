@@ -7,6 +7,8 @@ actual repos / stars / gists / followers / snapshots that were captured.
 from __future__ import annotations
 
 import json
+import re
+import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,6 +17,9 @@ from sqlmodel import Session, select
 from .. import config, crypto, github, health
 from ..db import get_session
 from ..models import Account, Job, Run
+from ..schemas import DeleteReposBody
+
+_SAFE_NAME = re.compile(r"^[\w.\-]+$")   # backed-up repo folder names
 
 router = APIRouter(prefix="/api/accounts", tags=["content"])
 
@@ -192,13 +197,37 @@ def repos(account_id: int, session: Session = Depends(get_session)):
                         "fork": m.get("fork"), "archived": m.get("archived"),
                         "stars": m.get("stargazers_count"), "full_name": m.get("full_name")})
         else:
-            # In repositories/ but not in either list — treat as own (e.g. a repo
-            # since deleted from GitHub, kept in the vault).
-            out.append({"name": name, "size_bytes": _dir_size(d), "kind": "own",
+            # In repositories/ but in neither list — an orphan clone (e.g. a
+            # cancelled starred download) or a repo since deleted from GitHub.
+            # Labelled "other" so it's distinguishable and can be cleaned up.
+            out.append({"name": name, "size_bytes": _dir_size(d), "kind": "other",
                         "language": None, "private": None, "fork": None,
                         "archived": None, "stars": None, "full_name": None})
     out.sort(key=lambda r: r["size_bytes"], reverse=True)
     return out
+
+
+@router.post("/{account_id}/repos/delete")
+def delete_repos(account_id: int, payload: DeleteReposBody,
+                 session: Session = Depends(get_session)):
+    """Permanently delete backed-up repo folders (own or starred clones).
+
+    Removes <current>/repositories/<name> for each requested name, reclaiming
+    disk. Path-guarded so only real subfolders can be deleted.
+    """
+    account = _account(account_id, session)
+    root = (_current(account) / "repositories").resolve()
+    deleted, freed = 0, 0
+    for name in payload.names:
+        if not _SAFE_NAME.match(name or ""):
+            continue
+        d = (root / name).resolve()
+        if d.parent != root or not d.is_dir():
+            continue
+        freed += _dir_size(d)
+        shutil.rmtree(d, ignore_errors=True)
+        deleted += 1
+    return {"deleted": deleted, "freed_bytes": freed}
 
 
 @router.get("/{account_id}/starred-live")

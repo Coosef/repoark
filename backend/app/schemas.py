@@ -73,6 +73,10 @@ class RestoreBody(BaseModel):
     private: bool = True
 
 
+class DeleteReposBody(BaseModel):
+    names: list[str] = []    # backed-up repo folder names to permanently delete
+
+
 class LoginBody(BaseModel):
     password: str = ""
 
