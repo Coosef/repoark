@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 from sqlmodel import Session
@@ -198,14 +199,77 @@ def _finalize(session: Session, account: Account, job: Job, run: Run, *, prune: 
             pass
 
 
+def _selected_starred(job: Job) -> list[str]:
+    """Full names of starred repos the user chose to clone (selected mode).
+
+    Empty when starred cloning is off or set to "all" (empty starred_repos).
+    """
+    if not (job.starred and job.starred_clone):
+        return []
+    raw = (job.starred_repos or "").strip()
+    if not raw:
+        return []
+    try:
+        names = json.loads(raw)
+    except Exception:
+        return []
+    return [n for n in names if isinstance(n, str) and "/" in n]
+
+
 def _job_options(job: Job) -> dict:
+    # In "selected starred" mode we clone the chosen repos ourselves, so the
+    # engine only writes the starred JSON list (--all-starred would clone all).
+    clone_all = job.starred_clone and not _selected_starred(job)
     return {
         "repos": job.repos, "private": job.private, "forks": job.forks,
         "wikis": job.wikis, "issues": job.issues, "starred": job.starred,
         "gists": job.gists, "releases": job.releases,
-        "starred_clone": job.starred_clone,
+        "starred_clone": clone_all,
         "skip_archived": job.skip_archived, "exclude": job.exclude,
     }
+
+
+def _clone_selected_starred(out_dir: Path, token: str, full_names: list[str], job_id: int) -> None:
+    """Mirror-clone selected starred repos into repositories/<name>/repository.
+
+    Matches github-backup's --all-starred layout so the panel lists them as
+    starred clones. Incremental: an existing mirror is fetched, not recloned.
+    A single repo's failure never breaks the run, and the tokened URL is never
+    persisted (output is captured and discarded).
+    """
+    repos_root = out_dir / "repositories"
+    repos_root.mkdir(parents=True, exist_ok=True)
+    for fn in full_names:
+        if engine.is_cancelled(job_id):
+            return
+        name = fn.split("/")[-1]
+        dest = repos_root / name / "repository"
+        progress.update(job_id, phase="Yıldızlı repolar", message=fn, inc=1)
+        url = f"https://{token}@github.com/{fn}.git"
+        try:
+            if (dest / "HEAD").exists():
+                subprocess.run(["git", "--git-dir", str(dest), "remote", "update", "--prune"],
+                               capture_output=True, timeout=3600)
+            else:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                subprocess.run(["git", "clone", "--mirror", url, str(dest)],
+                               capture_output=True, timeout=3600)
+        except Exception:
+            pass
+
+
+def _finish_cancelled(session: Session, job: Job, run: Run, job_id: int) -> Run:
+    """Persist a user-initiated stop as its own 'cancelled' outcome (not a failure)."""
+    run.status = "cancelled"
+    run.changed = False
+    run.finished_at = utcnow()
+    run.log = "[kullanıcı tarafından durduruldu]"
+    job.last_status = "cancelled"
+    session.add_all([run, job])
+    session.commit()
+    session.refresh(run)
+    progress.finish(job_id, "cancelled")
+    return run
 
 
 def run_job(session: Session, job_id: int, trigger: str = "manual") -> Run:
@@ -217,6 +281,7 @@ def run_job(session: Session, job_id: int, trigger: str = "manual") -> Run:
         raise ValueError(f"account {job.account_id} not found")
 
     token = crypto.decrypt(account.token_enc)
+    engine.clear_cancel(job_id)
     run = Run(job_id=job_id, trigger=trigger, status="running")
     session.add(run)
     job.last_status = "running"
@@ -262,12 +327,23 @@ def run_job(session: Session, job_id: int, trigger: str = "manual") -> Run:
 
         # 3: run the engine (streams progress via the callback)
         progress.update(job_id, phase="Repolar", message="başlıyor…")
+        if engine.is_cancelled(job_id):
+            return _finish_cancelled(session, job, run, job_id)
         opts = _job_options(job)
         opts["organization"] = account.is_org
         code, log = engine.run_backup(
-            account.username, token, out_dir, options=opts,
+            account.username, token, out_dir, options=opts, job_id=job_id,
             on_line=_make_progress_cb(job_id, job.issues),
         )
+        if engine.is_cancelled(job_id) or code == 130:
+            return _finish_cancelled(session, job, run, job_id)
+
+        # "Selected starred" mode: clone just the chosen repos ourselves.
+        selected = _selected_starred(job)
+        if selected:
+            _clone_selected_starred(out_dir, token, selected, job_id)
+            if engine.is_cancelled(job_id):
+                return _finish_cancelled(session, job, run, job_id)
 
         # profile/social captured directly (skipped for orgs — user-scoped)
         social_count = 0

@@ -49,6 +49,7 @@ class Job(SQLModel, table=True):
     issues: bool = True                  # issues + PRs + comments (JSON)
     starred: bool = True                 # starred repos list (JSON metadata)
     starred_clone: bool = False          # also clone starred repos' code (large!)
+    starred_repos: str = ""              # JSON list of full_names to clone ("" = all)
     gists: bool = True
     releases: bool = False               # release metadata + assets (can be large)
     skip_archived: bool = False          # skip archived repositories

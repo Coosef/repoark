@@ -67,8 +67,41 @@ def _redact(text: str, token: str) -> str:
     return text.replace(token, "***REDACTED***") if token else text
 
 
+# --- Cancellation registry --------------------------------------------------
+# Running github-backup subprocesses keyed by job_id, so a "stop" request on
+# another request thread can terminate an in-flight backup. _CANCEL marks jobs
+# the user asked to stop so run_backup can report a distinct "cancelled" result.
+_reg_lock = threading.Lock()
+_PROCS: dict[int, "subprocess.Popen"] = {}
+_CANCEL: set[int] = set()
+
+
+def request_cancel(job_id: int) -> bool:
+    """Ask a running backup to stop. Returns True if a process was signalled."""
+    with _reg_lock:
+        _CANCEL.add(job_id)
+        proc = _PROCS.get(job_id)
+    if proc is None:
+        return False
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+    return True
+
+
+def is_cancelled(job_id: int) -> bool:
+    with _reg_lock:
+        return job_id in _CANCEL
+
+
+def clear_cancel(job_id: int) -> None:
+    with _reg_lock:
+        _CANCEL.discard(job_id)
+
+
 def run_backup(username: str, token: str, output_dir: Path, *, options: dict,
-               timeout: int = 7200,
+               timeout: int = 7200, job_id: int | None = None,
                on_line: Callable[[str], None] | None = None) -> tuple[int, str]:
     """Run github-backup, streaming output line by line.
 
@@ -94,6 +127,10 @@ def run_backup(username: str, token: str, output_dir: Path, *, options: dict,
     except FileNotFoundError:
         return 127, "github-backup executable not found in PATH"
 
+    if job_id is not None:
+        with _reg_lock:
+            _PROCS[job_id] = proc
+
     timed_out = {"v": False}
 
     def _kill():
@@ -116,8 +153,13 @@ def run_backup(username: str, token: str, output_dir: Path, *, options: dict,
         proc.wait()
     finally:
         watchdog.cancel()
+        if job_id is not None:
+            with _reg_lock:
+                _PROCS.pop(job_id, None)
 
     log = "".join(lines)
+    if job_id is not None and is_cancelled(job_id):
+        return 130, log + "\n[durduruldu]"
     if timed_out["v"]:
         return 124, log + "\n[timed out]"
     return proc.returncode, log

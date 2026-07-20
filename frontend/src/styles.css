@@ -177,6 +177,11 @@ a.chip:hover { background: var(--accentT); color: var(--accent); text-decoration
 .badge-skipped { background: var(--fill); color: var(--muted); }
 .badge-error { background: var(--redT); color: var(--red); }
 .badge-never { background: var(--fill); color: var(--muted); }
+.badge-cancelled { background: var(--amberT); color: var(--amber); }
+.stop-btn { background: var(--redT); color: var(--red); }
+.stop-btn:hover { background: var(--red); color: #fff; }
+.star-mode { margin: 6px 0 2px; padding-left: 6px; border-left: 2px solid var(--fill2); }
+.star-picker { max-height: 220px; overflow-y: auto; border: 1px solid var(--fill2); border-radius: 10px; padding: 8px 10px; margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
 
 /* ---------- Forms ---------- */
 label { display: block; font-size: 13px; margin: 12px 0 5px; color: var(--muted2); }
@@ -379,6 +384,7 @@ tr.clickable:hover td { background: var(--hover); }
 .sdot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .sdot-success { background: var(--green); } .sdot-skipped { background: var(--muted); }
 .sdot-error { background: var(--red); } .sdot-running { background: var(--accent); }
+.sdot-cancelled { background: var(--amber); }
 
 /* Meta pills (repo detail) */
 .metapills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 10px 0 4px; }

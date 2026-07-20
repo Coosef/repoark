@@ -57,6 +57,7 @@ export const api = {
   updateJob: (id, job) => req("PUT", `/api/jobs/${id}`, job),
   deleteJob: (id) => req("DELETE", `/api/jobs/${id}`),
   runJob: (id) => req("POST", `/api/jobs/${id}/run`),
+  stopJob: (id) => req("POST", `/api/jobs/${id}/stop`),
   jobProgress: (id) => req("GET", `/api/jobs/${id}/progress`),
 
   // runs
@@ -66,6 +67,7 @@ export const api = {
   summary: (id) => req("GET", `/api/accounts/${id}/summary`),
   repos: (id) => req("GET", `/api/accounts/${id}/repos`),
   starred: (id) => req("GET", `/api/accounts/${id}/starred`),
+  starredLive: (id) => req("GET", `/api/accounts/${id}/starred-live`),
   gists: (id) => req("GET", `/api/accounts/${id}/gists`),
   social: (id) => req("GET", `/api/accounts/${id}/social`),
   snapshots: (id) => req("GET", `/api/accounts/${id}/snapshots`),

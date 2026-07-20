@@ -39,6 +39,7 @@ class JobBase(BaseModel):
     issues: bool = True
     starred: bool = True
     starred_clone: bool = False
+    starred_repos: str = ""
     gists: bool = True
     releases: bool = False
     skip_archived: bool = False

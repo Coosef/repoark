@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../api.js";
 import { relative } from "../lib/format.js";
 import { Badge, Empty, Switch } from "./ui.jsx";
@@ -20,11 +20,48 @@ export const emptyJob = (accountId) => ({
   account_id: accountId,
   name: "",
   repos: true, private: true, forks: false, wikis: true,
-  issues: true, starred: true, starred_clone: false, gists: true, releases: false,
+  issues: true, starred: true, starred_clone: false, starred_repos: "", gists: true, releases: false,
   skip_archived: false, exclude: "",
   enabled: true, schedule_kind: "interval", interval_minutes: 1440,
   cron: "", skip_unchanged: true,
 });
+
+function StarredPicker({ accountId, value, onChange }) {
+  const { t } = useLang();
+  const [list, setList] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let active = true;
+    setList(null); setErr("");
+    api.starredLive(accountId)
+      .then((d) => active && setList(d))
+      .catch((e) => active && setErr(e.message));
+    return () => { active = false; };
+  }, [accountId]);
+
+  let selected = [];
+  try { selected = JSON.parse(value || "[]"); } catch { selected = []; }
+  const toggle = (fn) => {
+    const s = new Set(selected);
+    s.has(fn) ? s.delete(fn) : s.add(fn);
+    onChange(JSON.stringify([...s]));
+  };
+
+  if (err) return <div className="error">{err}</div>;
+  if (list === null) return <div className="muted" style={{ padding: "6px 2px" }}>{t("form.starredLoading")}</div>;
+  if (list.length === 0) return <div className="muted" style={{ padding: "6px 2px" }}>{t("form.starredNone")}</div>;
+  return (
+    <div className="star-picker">
+      {list.map((r) => (
+        <label key={r.full_name} className="chk">
+          <input type="checkbox" checked={selected.includes(r.full_name)} onChange={() => toggle(r.full_name)} />
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{r.full_name}</span>
+          {r.language && <span className="muted" style={{ fontSize: 12 }}>{r.language}</span>}
+        </label>
+      ))}
+    </div>
+  );
+}
 
 function JobForm({ accounts, initial, onSaved, onCancel }) {
   const { t } = useLang();
@@ -33,6 +70,7 @@ function JobForm({ accounts, initial, onSaved, onCancel }) {
   const [err, setErr] = useState("");
   const set = (k, v) => setJob((j) => ({ ...j, [k]: v }));
   const isOrg = !!accounts.find((a) => a.id === job.account_id)?.is_org;
+  const starMode = (job.starred_repos || "").trim() ? "selected" : "all";
 
   async function submit(e) {
     e.preventDefault();
@@ -82,6 +120,25 @@ function JobForm({ accounts, initial, onSaved, onCancel }) {
           <input type="checkbox" checked={job.starred_clone} onChange={(e) => set("starred_clone", e.target.checked)} />
           {t("form.starredClone")}
         </label>
+      )}
+      {job.starred && !isOrg && job.starred_clone && (
+        <div className="star-mode">
+          <label className="chk">
+            <input type="radio" name="starmode" checked={starMode === "all"} onChange={() => set("starred_repos", "")} />
+            {t("form.starredAll")}
+          </label>
+          <label className="chk">
+            <input type="radio" name="starmode" checked={starMode === "selected"} onChange={() => set("starred_repos", "[]")} />
+            {t("form.starredSelected")}
+          </label>
+          {starMode === "selected" && (
+            <>
+              <div className="muted" style={{ margin: "6px 0 0" }}>{t("form.starredPick")}</div>
+              <StarredPicker accountId={job.account_id} value={job.starred_repos}
+                onChange={(v) => set("starred_repos", v)} />
+            </>
+          )}
+        </div>
       )}
 
       <label className="chk">
@@ -148,6 +205,16 @@ export default function Jobs({ jobs, accounts, editing, setEditing, onRefresh, o
     }
   }
 
+  async function stop(job) {
+    try {
+      await api.stopJob(job.id);
+      onMsg(t("toast.jobStopped", { name: job.name }));
+      onRefresh();
+    } catch (e) {
+      onMsg(t("toast.error", { msg: e.message }));
+    }
+  }
+
   async function remove(job) {
     if (!confirm(t("jobs.deleteConfirm", { name: job.name }))) return;
     await api.deleteJob(job.id);
@@ -204,6 +271,7 @@ export default function Jobs({ jobs, accounts, editing, setEditing, onRefresh, o
               )}
               <div className="row" style={{ marginTop: 8 }}>
                 <button onClick={() => run(job)} disabled={isRunning}>{isRunning ? t("common.running") : t("common.runNow")}</button>
+                {isRunning && <button className="stop-btn" onClick={() => stop(job)}>{t("common.stop")}</button>}
                 <button className="link" onClick={() => setEditing(job)}>{t("common.edit")}</button>
                 <button className="link" onClick={() => onShowHistory(job)}>{t("common.history")}</button>
                 <button className="link danger" onClick={() => remove(job)}>{t("common.delete")}</button>

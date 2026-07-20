@@ -116,6 +116,22 @@ def _paginate(c: httpx.Client, path: str, params: dict | None = None,
     return items
 
 
+def list_starred(token: str) -> list[dict[str, Any]]:
+    """Live list of the user's starred repos, for the job's selection picker."""
+    with _client(token) as c:
+        rows = _paginate(c, "/user/starred", {"sort": "created"})
+    return [
+        {
+            "full_name": r.get("full_name"),
+            "description": r.get("description"),
+            "language": r.get("language"),
+            "stars": r.get("stargazers_count"),
+            "private": r.get("private"),
+        }
+        for r in rows if r.get("full_name")
+    ]
+
+
 def _hash(obj: Any) -> str:
     blob = json.dumps(obj, sort_keys=True, default=str)
     return hashlib.sha256(blob.encode()).hexdigest()

@@ -6,7 +6,7 @@ import threading
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from .. import backup, db, progress, scheduler
+from .. import backup, db, engine, progress, scheduler
 from ..db import get_session
 from ..models import Account, Job, Run
 from ..schemas import JobCreate, JobRead, JobUpdate, RunRead
@@ -77,6 +77,15 @@ def run_now(job_id: int, session: Session = Depends(get_session)):
         status="running", changed=False, trigger="manual",
         summary="", snapshot_path="", log="",
     )
+
+
+@router.post("/{job_id}/stop", status_code=202)
+def stop_now(job_id: int, session: Session = Depends(get_session)):
+    """Signal a running backup to stop. It ends as 'cancelled', not a failure."""
+    if not session.get(Job, job_id):
+        raise HTTPException(404, "Job not found")
+    signalled = engine.request_cancel(job_id)
+    return {"stopping": True, "signalled": signalled}
 
 
 @router.get("/{job_id}/progress")

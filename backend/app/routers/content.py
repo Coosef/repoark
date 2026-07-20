@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from .. import config, health
+from .. import config, crypto, github, health
 from ..db import get_session
 from ..models import Account, Job, Run
 
@@ -199,6 +199,16 @@ def repos(account_id: int, session: Session = Depends(get_session)):
                         "archived": None, "stars": None, "full_name": None})
     out.sort(key=lambda r: r["size_bytes"], reverse=True)
     return out
+
+
+@router.get("/{account_id}/starred-live")
+def starred_live(account_id: int, session: Session = Depends(get_session)):
+    """Fetch the account's starred repos live from GitHub (for the job picker)."""
+    account = _account(account_id, session)
+    try:
+        return github.list_starred(crypto.decrypt(account.token_enc))
+    except Exception as e:
+        raise HTTPException(502, f"GitHub: {e}")
 
 
 @router.get("/{account_id}/starred")
