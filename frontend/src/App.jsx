@@ -45,6 +45,7 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(false);
   const [version, setVersion] = useState("");
+  const [update, setUpdate] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("rk-theme") || "light");
   const { lang, setLang, t } = useLang();
 
@@ -70,6 +71,7 @@ export default function App() {
   }, [theme]);
   useEffect(() => { api.authStatus().then((s) => setAuthEnabled(s.enabled)).catch(() => {}); }, []);
   useEffect(() => { api.version().then((h) => setVersion(h.version || "")).catch(() => {}); }, []);
+  useEffect(() => { api.updateCheck().then(setUpdate).catch(() => {}); }, []);
 
   // First run: auto-open the setup wizard when no account is connected yet,
   // unless the user ticked "don't show again". Decided once per session.
@@ -177,7 +179,17 @@ export default function App() {
             </div>
           </button>
         )}
-        {version && <div className="side-version">v{version}</div>}
+        {version && (
+          <div className="side-version">
+            <span>v{version}</span>
+            {update?.update_available && (
+              <a className="side-update" href={update.url} target="_blank" rel="noreferrer"
+                title={t("update.tooltip", { v: update.latest })}>
+                {t("update.badge", { v: update.latest })}
+              </a>
+            )}
+          </div>
+        )}
       </aside>
 
       <main className="main">

@@ -52,6 +52,7 @@ export const api = {
   deleted: (id) => req("GET", `/api/accounts/${id}/deleted`),
 
   version: () => req("GET", "/api/health"),
+  updateCheck: () => req("GET", "/api/update-check"),
 
   // jobs
   listJobs: () => req("GET", "/api/jobs"),

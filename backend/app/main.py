@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -70,6 +72,58 @@ app.include_router(settings.router)
 @app.get("/api/health")
 def health():
     return {"status": "ok", "version": APP_VERSION}
+
+
+# --- Update check ---
+# Compares the running version against the VERSION file on the repo's main
+# branch. The only thing sent out is a plain GET for a public file — no telemetry
+# or user data. Result is cached so we hit GitHub at most a few times a day, and
+# any failure (offline, rate limit) is swallowed so it never disrupts the panel.
+_VERSION_URL = "https://raw.githubusercontent.com/Coosef/repoark/main/VERSION"
+_REPO_URL = "https://github.com/Coosef/repoark"
+_UPDATE_TTL = timedelta(hours=6)
+_update_cache: dict = {"at": None, "latest": None}
+
+
+def _parse_ver(v: str) -> tuple[int, ...]:
+    out = []
+    for part in (v or "").strip().split("."):
+        try:
+            out.append(int(part))
+        except ValueError:
+            out.append(0)
+    return tuple(out) or (0,)
+
+
+def _latest_version() -> str | None:
+    now = datetime.now(timezone.utc)
+    at, latest = _update_cache["at"], _update_cache["latest"]
+    if at and latest and now - at < _UPDATE_TTL:
+        return latest
+    try:
+        r = httpx.get(_VERSION_URL, timeout=6.0, headers={"User-Agent": "repoark"})
+        r.raise_for_status()
+        latest = (r.text.strip().split() or [""])[0]
+        if latest:
+            _update_cache.update(at=now, latest=latest)
+        return latest or _update_cache["latest"]
+    except Exception:
+        return _update_cache["latest"]  # last known, or None on first failure
+
+
+@app.get("/api/update-check")
+def update_check():
+    latest = _latest_version()
+    available = bool(
+        latest and APP_VERSION not in ("", "dev")
+        and _parse_ver(latest) > _parse_ver(APP_VERSION)
+    )
+    return {
+        "current": APP_VERSION,
+        "latest": latest,
+        "update_available": available,
+        "url": _REPO_URL,
+    }
 
 
 # --- Static frontend (mounted last so /api/* wins) ---
