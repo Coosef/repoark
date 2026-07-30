@@ -82,6 +82,131 @@ function StarredPicker({ accountId, value, onChange }) {
   );
 }
 
+// Display order Mon..Sun; values are cron day-of-week numbers (0 = Sunday).
+const WEEK = [1, 2, 3, 4, 5, 6, 0];
+
+// Localized short weekday name via the browser's Intl. 2024-01-07 is a Sunday,
+// so adding `dow` days lands on the wanted weekday in any locale.
+function weekdayLabel(lang, dow) {
+  try {
+    return new Intl.DateTimeFormat(lang || "tr", { weekday: "short" })
+      .format(new Date(2024, 0, 7 + dow));
+  } catch {
+    return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dow];
+  }
+}
+
+// Best-effort read of a cron string back into the friendly builder. Returns null
+// for anything that isn't one of our three simple shapes (then we fall back to
+// the raw "custom" editor so hand-written crons are never clobbered).
+function parseCron(cron) {
+  const p = (cron || "").trim().split(/\s+/);
+  if (p.length !== 5) return null;
+  const [m, h, dom, mon, dowRaw] = p;
+  const int = (s) => /^\d+$/.test(s);
+  if (!int(m) || !int(h) || mon !== "*") return null;
+  const minute = Math.min(59, +m), hour = Math.min(23, +h);
+  const dow = dowRaw.replace(/\b7\b/g, "0");
+  if (dom === "*" && dowRaw === "*") return { freq: "daily", hour, minute, days: [1], dom: 1 };
+  if (dom === "*" && /^[0-6](,[0-6])*$/.test(dow))
+    return { freq: "weekly", hour, minute, days: [...new Set(dow.split(",").map(Number))], dom: 1 };
+  if (int(dom) && dowRaw === "*")
+    return { freq: "monthly", hour, minute, days: [1], dom: Math.min(31, Math.max(1, +dom)) };
+  return null;
+}
+
+function buildCron(s) {
+  if (s.freq === "weekly") {
+    const d = (s.days.length ? [...s.days] : [1]).sort((a, b) => a - b).join(",");
+    return `${s.minute} ${s.hour} * * ${d}`;
+  }
+  if (s.freq === "monthly") return `${s.minute} ${s.hour} ${s.dom} * *`;
+  return `${s.minute} ${s.hour} * * *`;
+}
+
+const pad = (n) => String(n).padStart(2, "0");
+
+// Friendly schedule builder: the user picks daily / weekly / monthly + a time
+// (and days or day-of-month), and we assemble the cron string in the background.
+// Power users can flip to "custom" to type a raw cron directly.
+function CronBuilder({ value, onChange }) {
+  const { t, lang } = useLang();
+  const initial = parseCron(value);
+  const [advanced, setAdvanced] = useState(!!value && !initial);
+  const [s, setS] = useState(initial || { freq: "daily", hour: 3, minute: 0, days: [1], dom: 1 });
+
+  // Keep the parent's cron valid from the start (new job → empty field, or a
+  // preset we just parsed). Runs once on mount.
+  useEffect(() => {
+    if (!advanced && (!value || initial)) onChange(buildCron(s));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const upd = (patch) => { const next = { ...s, ...patch }; setS(next); onChange(buildCron(next)); };
+  const toggleDay = (d) => {
+    const set = new Set(s.days);
+    set.has(d) ? set.delete(d) : set.add(d);
+    upd({ days: [...set] });
+  };
+  const setTime = (v) => {
+    const [hh, mm] = (v || "3:0").split(":").map((x) => parseInt(x, 10) || 0);
+    upd({ hour: Math.min(23, hh), minute: Math.min(59, mm) });
+  };
+  const toggleAdvanced = (on) => { setAdvanced(on); if (!on) onChange(buildCron(s)); };
+
+  return (
+    <div className="cron-builder">
+      {!advanced ? (
+        <>
+          <div className="cron-row">
+            <div className="cron-field">
+              <label>{t("form.schedule")}</label>
+              <select value={s.freq} onChange={(e) => upd({ freq: e.target.value })}>
+                <option value="daily">{t("sched.freqDaily")}</option>
+                <option value="weekly">{t("sched.freqWeekly")}</option>
+                <option value="monthly">{t("sched.freqMonthly")}</option>
+              </select>
+            </div>
+            <div className="cron-field">
+              <label>{t("sched.atTime")}</label>
+              <input type="time" value={`${pad(s.hour)}:${pad(s.minute)}`} onChange={(e) => setTime(e.target.value)} />
+            </div>
+            {s.freq === "monthly" && (
+              <div className="cron-field">
+                <label>{t("sched.dayOfMonth")}</label>
+                <input type="number" min="1" max="31" value={s.dom}
+                  onChange={(e) => upd({ dom: Math.min(31, Math.max(1, Number(e.target.value) || 1)) })} />
+              </div>
+            )}
+          </div>
+          {s.freq === "weekly" && (
+            <div className="cron-week">
+              <label>{t("sched.onDays")}</label>
+              <div className="cron-days">
+                {WEEK.map((d) => (
+                  <button type="button" key={d}
+                    className={"cron-day" + (s.days.includes(d) ? " on" : "")}
+                    onClick={() => toggleDay(d)}>{weekdayLabel(lang, d)}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="cron-expr muted">{t("sched.exprLabel")}: <code>{buildCron(s)}</code></div>
+        </>
+      ) : (
+        <div className="cron-field">
+          <label>{t("sched.freqCustom")}</label>
+          <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="0 3 * * *" />
+        </div>
+      )}
+      <label className="chk" style={{ marginTop: 4 }}>
+        <input type="checkbox" checked={advanced} onChange={(e) => toggleAdvanced(e.target.checked)} />
+        {t("sched.freqCustom")}
+      </label>
+    </div>
+  );
+}
+
 function JobForm({ accounts, initial, onSaved, onCancel }) {
   const { t } = useLang();
   const [job, setJob] = useState(initial);
@@ -185,14 +310,11 @@ function JobForm({ accounts, initial, onSaved, onCancel }) {
               <span className="muted">{t("form.everyMinHint")}</span>
             </>
           )}
-          {job.schedule_kind === "cron" && (
-            <>
-              <label>Cron</label>
-              <input value={job.cron} onChange={(e) => set("cron", e.target.value)} placeholder="0 3 * * *" />
-            </>
-          )}
         </div>
       </div>
+      {job.schedule_kind === "cron" && (
+        <CronBuilder value={job.cron} onChange={(c) => set("cron", c)} />
+      )}
 
       <label className="chk">
         <input type="checkbox" checked={job.skip_unchanged} onChange={(e) => set("skip_unchanged", e.target.checked)} />
@@ -213,7 +335,7 @@ function JobForm({ accounts, initial, onSaved, onCancel }) {
 }
 
 export default function Jobs({ jobs, accounts, editing, setEditing, onRefresh, onMsg, onShowHistory }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   async function run(job) {
     try {
       await api.runJob(job.id);
@@ -246,7 +368,16 @@ export default function Jobs({ jobs, accounts, editing, setEditing, onRefresh, o
   }
 
   const scheduleText = (job) => {
-    if (job.schedule_kind === "cron") return t("sched.cron", { cron: job.cron });
+    if (job.schedule_kind === "cron") {
+      const p = parseCron(job.cron);
+      if (!p) return t("sched.cron", { cron: job.cron });
+      const time = `${pad(p.hour)}:${pad(p.minute)}`;
+      if (p.freq === "daily") return t("sched.dailyAt", { time });
+      if (p.freq === "monthly") return t("sched.monthlyAt", { d: p.dom, time });
+      const days = [...p.days].sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b))
+        .map((d) => weekdayLabel(lang, d)).join(", ");
+      return `${days} · ${time}`;
+    }
     if (job.schedule_kind === "manual") return t("sched.manual");
     const m = job.interval_minutes;
     if (m % 1440 === 0) return t("sched.everyDays", { n: m / 1440 });
