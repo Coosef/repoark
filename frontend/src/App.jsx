@@ -71,7 +71,12 @@ export default function App() {
   }, [theme]);
   useEffect(() => { api.authStatus().then((s) => setAuthEnabled(s.enabled)).catch(() => {}); }, []);
   useEffect(() => { api.version().then((h) => setVersion(h.version || "")).catch(() => {}); }, []);
-  useEffect(() => { api.updateCheck().then(setUpdate).catch(() => {}); }, []);
+  useEffect(() => {
+    const check = () => api.updateCheck().then(setUpdate).catch(() => {});
+    check();
+    const id = setInterval(check, 3600_000); // re-check hourly so a long-open panel still notices a new release
+    return () => clearInterval(id);
+  }, []);
 
   // First run: auto-open the setup wizard when no account is connected yet,
   // unless the user ticked "don't show again". Decided once per session.
