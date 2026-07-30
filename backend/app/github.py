@@ -127,6 +127,9 @@ def list_starred(token: str) -> list[dict[str, Any]]:
             "language": r.get("language"),
             "stars": r.get("stargazers_count"),
             "private": r.get("private"),
+            # GitHub reports repo size in KiB; the picker turns this into a
+            # human size so the user can choose what to clone before downloading.
+            "size_kb": r.get("size") or 0,
         }
         for r in rows if r.get("full_name")
     ]

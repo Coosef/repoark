@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "../api.js";
-import { relative } from "../lib/format.js";
+import { relative, bytes } from "../lib/format.js";
 import { Badge, Empty, Switch } from "./ui.jsx";
 import LiveProgress from "./Progress.jsx";
 import { useLang } from "../i18n.jsx";
@@ -41,6 +41,7 @@ function StarredPicker({ accountId, value, onChange }) {
 
   let selected = [];
   try { selected = JSON.parse(value || "[]"); } catch { selected = []; }
+  const selSet = new Set(selected);
   const toggle = (fn) => {
     const s = new Set(selected);
     s.has(fn) ? s.delete(fn) : s.add(fn);
@@ -50,15 +51,33 @@ function StarredPicker({ accountId, value, onChange }) {
   if (err) return <div className="error">{err}</div>;
   if (list === null) return <div className="muted" style={{ padding: "6px 2px" }}>{t("form.starredLoading")}</div>;
   if (list.length === 0) return <div className="muted" style={{ padding: "6px 2px" }}>{t("form.starredNone")}</div>;
+
+  // GitHub reports sizes in KiB. Biggest repos first so the heavy ones — the
+  // ones worth thinking twice about — are easy to spot and (de)select.
+  const sorted = [...list].sort((a, b) => (b.size_kb || 0) - (a.size_kb || 0));
+  const totalKb = list.reduce((s, r) => s + (r.size_kb || 0), 0);
+  const selKb = list.reduce((s, r) => (selSet.has(r.full_name) ? s + (r.size_kb || 0) : s), 0);
+  const selectAll = () => onChange(JSON.stringify(list.map((r) => r.full_name)));
+
   return (
-    <div className="star-picker">
-      {list.map((r) => (
-        <label key={r.full_name} className="chk">
-          <input type="checkbox" checked={selected.includes(r.full_name)} onChange={() => toggle(r.full_name)} />
-          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{r.full_name}</span>
-          {r.language && <span className="muted" style={{ fontSize: 12 }}>{r.language}</span>}
-        </label>
-      ))}
+    <div>
+      <div className="star-summary">
+        <span>{t("form.starredSummary", { count: list.length, total: bytes(totalKb * 1024) })}</span>
+        <span className="star-sel">{t("form.starredSelSummary", { count: selected.length, size: bytes(selKb * 1024) })}</span>
+        <span style={{ marginLeft: "auto" }} />
+        <button type="button" className="link" onClick={selectAll}>{t("content.selectAll")}</button>
+        <button type="button" className="link" onClick={() => onChange("[]")}>{t("form.starredClear")}</button>
+      </div>
+      <div className="star-picker">
+        {sorted.map((r) => (
+          <label key={r.full_name} className="chk">
+            <input type="checkbox" checked={selSet.has(r.full_name)} onChange={() => toggle(r.full_name)} />
+            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{r.full_name}</span>
+            {r.language && <span className="muted" style={{ fontSize: 12 }}>{r.language}</span>}
+            <span className="star-size">{bytes((r.size_kb || 0) * 1024)}</span>
+          </label>
+        ))}
+      </div>
     </div>
   );
 }
