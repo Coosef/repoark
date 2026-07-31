@@ -74,7 +74,7 @@ export default function App() {
   useEffect(() => {
     const check = () => api.updateCheck().then(setUpdate).catch(() => {});
     check();
-    const id = setInterval(check, 900_000); // re-check every 15 min so a long-open panel notices a new release
+    const id = setInterval(check, 3600_000); // re-check hourly so a long-open panel still notices a new release
     return () => clearInterval(id);
   }, []);
 

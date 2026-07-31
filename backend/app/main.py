@@ -81,10 +81,9 @@ def health():
 # any failure (offline, rate limit) is swallowed so it never disrupts the panel.
 _VERSION_URL = "https://raw.githubusercontent.com/Coosef/repoark/main/VERSION"
 _REPO_URL = "https://github.com/Coosef/repoark"
-# Kept short so a freshly published version surfaces in the sidebar quickly
-# instead of lingering behind a stale "you're up to date" answer — while still
-# sparing GitHub a fetch on every single page load.
-_UPDATE_TTL = timedelta(minutes=15)
+# Once an hour is plenty for a "new version available" nudge and keeps the
+# panel from pinging GitHub on every page load.
+_UPDATE_TTL = timedelta(hours=1)
 _update_cache: dict = {"at": None, "latest": None}
 
 
