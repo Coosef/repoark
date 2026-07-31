@@ -42,11 +42,17 @@ def _account(account_id: int, session: Session) -> Account:
     return acc
 
 
-def _git_dir(acc: Account, repo: str) -> Path:
+def _git_dir(acc: Account, repo: str, owner: str = "", src: str = "") -> Path:
     if not _SAFE_NAME.match(repo):
         raise HTTPException(400, "Invalid repository name")
-    base = config.BACKUPS_DIR / acc.username / "current" / "repositories"
-    gd = base / repo / "repository"
+    cur = config.BACKUPS_DIR / acc.username / "current"
+    if src == "starred":
+        # "Download all starred" clones live at current/starred/<owner>/<repo>.
+        if not _SAFE_NAME.match(owner or ""):
+            raise HTTPException(400, "Invalid owner")
+        gd = cur / "starred" / owner / repo / "repository"
+    else:
+        gd = cur / "repositories" / repo / "repository"
     if not gd.is_dir():
         raise HTTPException(404, "Repository not found in backup")
     return gd
@@ -77,8 +83,9 @@ def _git(gd: Path, *args: str, binary: bool = False):
 
 
 @router.get("/{account_id}/repos/{repo}/refs")
-def refs(account_id: int, repo: str, session: Session = Depends(get_session)):
-    gd = _git_dir(_account(account_id, session), repo)
+def refs(account_id: int, repo: str, owner: str = Query(""), src: str = Query(""),
+         session: Session = Depends(get_session)):
+    gd = _git_dir(_account(account_id, session), repo, owner, src)
     heads = _git(gd, "for-each-ref", "--format=%(refname:short)", "refs/heads").split()
     tags = _git(gd, "for-each-ref", "--format=%(refname:short)", "refs/tags").split()
     try:
@@ -92,18 +99,30 @@ _README_NAMES = {"readme.md", "readme", "readme.rst", "readme.txt", "readme.mark
 
 
 @router.get("/{account_id}/repos/{repo}/overview")
-def overview(account_id: int, repo: str, session: Session = Depends(get_session)):
+def overview(account_id: int, repo: str, owner: str = Query(""), src: str = Query(""),
+             session: Session = Depends(get_session)):
     """GitHub-like project overview: metadata + git stats + README location."""
     acc = _account(account_id, session)
-    gd = _git_dir(acc, repo)
+    gd = _git_dir(acc, repo, owner, src)
 
     meta: dict = {}
-    repos_json = config.BACKUPS_DIR / acc.username / "current" / "account" / "repos.json"
+    cur = config.BACKUPS_DIR / acc.username / "current"
     try:
-        for r in json.loads(repos_json.read_text()):
-            if r.get("name") == repo:
-                meta = r
-                break
+        if src == "starred":
+            # Starred clones' metadata lives in starred.json, keyed by full_name.
+            full = f"{owner}/{repo}"
+            for r in json.loads((cur / "account" / "starred.json").read_text()):
+                if r.get("full_name") == full:
+                    meta = {"language": r.get("language"), "private": r.get("private"),
+                            "fork": r.get("fork"), "archived": r.get("archived"),
+                            "stars": r.get("stargazers_count"), "size": r.get("size"),
+                            "pushed_at": r.get("pushed_at"), "description": r.get("description")}
+                    break
+        else:
+            for r in json.loads((cur / "account" / "repos.json").read_text()):
+                if r.get("name") == repo:
+                    meta = r
+                    break
     except Exception:
         pass
 
@@ -146,8 +165,9 @@ def overview(account_id: int, repo: str, session: Session = Depends(get_session)
 
 @router.get("/{account_id}/repos/{repo}/tree")
 def tree(account_id: int, repo: str, ref: str = Query("HEAD"), path: str = Query(""),
+         owner: str = Query(""), src: str = Query(""),
          session: Session = Depends(get_session)):
-    gd = _git_dir(_account(account_id, session), repo)
+    gd = _git_dir(_account(account_id, session), repo, owner, src)
     _check_ref(ref)
     path = _check_path(path)
     spec = f"{ref}:{path}" if path else ref
@@ -171,8 +191,9 @@ def tree(account_id: int, repo: str, ref: str = Query("HEAD"), path: str = Query
 
 @router.get("/{account_id}/repos/{repo}/blob")
 def blob(account_id: int, repo: str, ref: str = Query("HEAD"), path: str = Query(...),
+         owner: str = Query(""), src: str = Query(""),
          session: Session = Depends(get_session)):
-    gd = _git_dir(_account(account_id, session), repo)
+    gd = _git_dir(_account(account_id, session), repo, owner, src)
     _check_ref(ref)
     path = _check_path(path)
     if not path:
@@ -192,8 +213,9 @@ def blob(account_id: int, repo: str, ref: str = Query("HEAD"), path: str = Query
 
 @router.get("/{account_id}/repos/{repo}/commits")
 def commits(account_id: int, repo: str, ref: str = Query("HEAD"),
-            limit: int = Query(50, le=200), session: Session = Depends(get_session)):
-    gd = _git_dir(_account(account_id, session), repo)
+            limit: int = Query(50, le=200), owner: str = Query(""), src: str = Query(""),
+            session: Session = Depends(get_session)):
+    gd = _git_dir(_account(account_id, session), repo, owner, src)
     _check_ref(ref)
     out = _git(gd, "log", f"--format=%H%x1f%an%x1f%ad%x1f%s", "--date=iso",
                f"-n{limit}", ref)
@@ -207,8 +229,9 @@ def commits(account_id: int, repo: str, ref: str = Query("HEAD"),
 
 @router.get("/{account_id}/repos/{repo}/raw")
 def raw(account_id: int, repo: str, ref: str = Query("HEAD"), path: str = Query(...),
+        owner: str = Query(""), src: str = Query(""),
         session: Session = Depends(get_session)):
-    gd = _git_dir(_account(account_id, session), repo)
+    gd = _git_dir(_account(account_id, session), repo, owner, src)
     _check_ref(ref)
     path = _check_path(path)
     if not path:
@@ -221,8 +244,9 @@ def raw(account_id: int, repo: str, ref: str = Query("HEAD"), path: str = Query(
 
 @router.get("/{account_id}/repos/{repo}/download")
 def download_repo(account_id: int, repo: str, ref: str = Query("HEAD"),
+                  owner: str = Query(""), src: str = Query(""),
                   session: Session = Depends(get_session)):
-    gd = _git_dir(_account(account_id, session), repo)
+    gd = _git_dir(_account(account_id, session), repo, owner, src)
     _check_ref(ref)
     proc = subprocess.Popen(
         ["git", f"--git-dir={gd}", "archive", "--format=zip", f"--prefix={repo}/", ref],
@@ -247,9 +271,10 @@ def download_repo(account_id: int, repo: str, ref: str = Query("HEAD"),
 
 
 @router.get("/{account_id}/repos/{repo}/bundle")
-def repo_bundle(account_id: int, repo: str, session: Session = Depends(get_session)):
+def repo_bundle(account_id: int, repo: str, owner: str = Query(""), src: str = Query(""),
+                session: Session = Depends(get_session)):
     """A single-file git bundle of all refs — restore with `git clone x.bundle`."""
-    gd = _git_dir(_account(account_id, session), repo)
+    gd = _git_dir(_account(account_id, session), repo, owner, src)
     proc = subprocess.Popen(
         ["git", f"--git-dir={gd}", "bundle", "create", "-", "--all"],
         stdout=subprocess.PIPE)

@@ -1,6 +1,11 @@
 // Thin fetch wrapper around the backend API.
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
+// Query suffix that routes browse calls to a "download all starred" clone
+// (current/starred/<owner>/<repo>). Empty for the user's own repos.
+const _sq = (owner, src, hasQuery = false) =>
+  src === "starred" ? `${hasQuery ? "&" : "?"}owner=${encodeURIComponent(owner)}&src=starred` : "";
+
 // When the panel is password-locked and the session lapses, the API answers
 // 401. A registered handler (see App) can then show the login screen.
 let authFailHandler = null;
@@ -78,15 +83,17 @@ export const api = {
   social: (id) => req("GET", `/api/accounts/${id}/social`),
   snapshots: (id) => req("GET", `/api/accounts/${id}/snapshots`),
 
-  // browse into a repo (git-backed)
-  overview: (id, repo) => req("GET", `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/overview`),
-  refs: (id, repo) => req("GET", `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/refs`),
-  tree: (id, repo, ref, path) =>
-    req("GET", `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/tree?ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(path || "")}`),
-  blob: (id, repo, ref, path) =>
-    req("GET", `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/blob?ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(path)}`),
-  commits: (id, repo, ref) =>
-    req("GET", `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/commits?ref=${encodeURIComponent(ref)}`),
+  // browse into a repo (git-backed). owner/src route to a starred clone.
+  overview: (id, repo, owner = "", src = "") =>
+    req("GET", `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/overview${_sq(owner, src)}`),
+  refs: (id, repo, owner = "", src = "") =>
+    req("GET", `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/refs${_sq(owner, src)}`),
+  tree: (id, repo, ref, path, owner = "", src = "") =>
+    req("GET", `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/tree?ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(path || "")}${_sq(owner, src, true)}`),
+  blob: (id, repo, ref, path, owner = "", src = "") =>
+    req("GET", `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/blob?ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(path)}${_sq(owner, src, true)}`),
+  commits: (id, repo, ref, owner = "", src = "") =>
+    req("GET", `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/commits?ref=${encodeURIComponent(ref)}${_sq(owner, src, true)}`),
   snapshotDetail: (id, name) => req("GET", `/api/accounts/${id}/snapshots/${name}/detail`),
   snapshotFile: (id, name, path) =>
     req("GET", `/api/accounts/${id}/snapshots/${name}/file?path=${encodeURIComponent(path)}`),
@@ -124,13 +131,14 @@ export const api = {
 
 // Direct download URLs (used as <a href>) — the browser handles the file save.
 export const urls = {
-  repoDownload: (id, repo, ref) =>
-    `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/download?ref=${encodeURIComponent(ref)}`,
-  raw: (id, repo, ref, path) =>
-    `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/raw?ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(path)}`,
+  repoDownload: (id, repo, ref, owner = "", src = "") =>
+    `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/download?ref=${encodeURIComponent(ref)}${_sq(owner, src, true)}`,
+  raw: (id, repo, ref, path, owner = "", src = "") =>
+    `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/raw?ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(path)}${_sq(owner, src, true)}`,
   snapshotDownload: (id, name) => `/api/accounts/${id}/snapshots/${name}/download`,
   gistDownload: (id, gid) => `/api/accounts/${id}/gists/${gid}/download`,
   accountDownload: (id) => `/api/accounts/${id}/download`,
-  repoBundle: (id, repo) => `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/bundle`,
+  repoBundle: (id, repo, owner = "", src = "") =>
+    `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/bundle${_sq(owner, src)}`,
   configExport: () => `/api/config/export`,
 };

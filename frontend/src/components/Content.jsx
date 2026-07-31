@@ -89,7 +89,7 @@ export default function Content({ accountId, onMsg }) {
   }
 
   if (!accountId) return <Empty>Önce bir hesap bağla.</Empty>;
-  if (repo) return <RepoBrowser accountId={accountId} repo={repo.name} initialPath={repo.path} onClose={() => setRepo(null)} />;
+  if (repo) return <RepoBrowser accountId={accountId} repo={repo.name} owner={repo.owner} src={repo.src} fullName={repo.full_name} initialPath={repo.path} onClose={() => setRepo(null)} />;
   if (gist) return <GistBrowser accountId={accountId} gid={gist.id} description={gist.description} onClose={() => setGist(null)} />;
   if (snapshot) return <SnapshotDetail accountId={accountId} name={snapshot} onClose={() => setSnapshot(null)} />;
 
@@ -127,11 +127,8 @@ export default function Content({ accountId, onMsg }) {
         const rowIds = rows.map(rid);
         const allSel = rowIds.length > 0 && rowIds.every((id) => sel.has(id));
         const toggle = (id) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-        // Own/selected clones open the in-panel browser; "download all" starred
-        // clones aren't indexed for browsing, so they open on GitHub instead.
-        const openRepo = (r) => r.src === "starred"
-          ? window.open(`https://github.com/${r.full_name}`, "_blank", "noopener")
-          : setRepo({ name: r.name });
+        // Every repo — own or starred clone — opens in the in-panel browser.
+        const openRepo = (r) => setRepo({ name: r.name, owner: r.owner, src: r.src, full_name: r.full_name });
         const seg = (k, label) => <button className={repoFilter === k ? "on" : ""} onClick={() => setRepoFilter(k)}>{label}</button>;
         const amber = { marginLeft: 8, background: "var(--amberT)", color: "var(--amber)" };
         return (

@@ -15,8 +15,10 @@ const LANG_COLORS = {
 };
 const langColor = (l) => LANG_COLORS[l] || "var(--muted)";
 
-export default function RepoBrowser({ accountId, repo, initialPath, onClose }) {
+export default function RepoBrowser({ accountId, repo, owner = "", src = "", fullName, initialPath, onClose }) {
   const { t } = useLang();
+  const isStarred = src === "starred";       // a "download all starred" clone
+  const title = fullName || repo;
   const [refs, setRefs] = useState({ head: "HEAD", branches: [], tags: [] });
   const [ref, setRef] = useState("HEAD");
   const [view, setView] = useState(initialPath ? "files" : "overview"); // overview | files | commits | issues | pulls
@@ -50,55 +52,55 @@ export default function RepoBrowser({ accountId, repo, initialPath, onClose }) {
   }
 
   useEffect(() => {
-    api.refs(accountId, repo).then((r) => {
+    api.refs(accountId, repo, owner, src).then((r) => {
       setRefs(r);
       setRef(r.head || "HEAD");
     }).catch((e) => setErr(e.message));
-    api.overview(accountId, repo).then((o) => {
+    api.overview(accountId, repo, owner, src).then((o) => {
       setOverview(o);
       if (o.readme) {
-        api.blob(accountId, repo, o.default_branch || "HEAD", o.readme)
+        api.blob(accountId, repo, o.default_branch || "HEAD", o.readme, owner, src)
           .then((b) => !b.binary && setReadmeHtml(marked.parse(b.text || "")))
           .catch(() => {});
       }
     }).catch(() => {});
-  }, [accountId, repo]);
+  }, [accountId, repo, owner, src]);
 
   const loadTree = useCallback((p) => {
     setFile(null);
     setErr("");
-    api.tree(accountId, repo, ref, p)
+    api.tree(accountId, repo, ref, p, owner, src)
       .then((t) => { setTree(t); setPath(p); })
       .catch((e) => setErr(e.message));
-  }, [accountId, repo, ref]);
+  }, [accountId, repo, ref, owner, src]);
 
   useEffect(() => {
     if (!ref) return;
     setErr("");
     if (view === "files") loadTree("");
-    else if (view === "commits") api.commits(accountId, repo, ref).then(setCommits).catch((e) => setErr(e.message));
+    else if (view === "commits") api.commits(accountId, repo, ref, owner, src).then(setCommits).catch((e) => setErr(e.message));
     else if (view === "issues" || view === "pulls") {
       setThread(null);
       setThreads(null);
       api.threads(accountId, repo, view).then(setThreads).catch((e) => setErr(e.message));
     }
-  }, [ref, view, loadTree, accountId, repo]);
+  }, [ref, view, loadTree, accountId, repo, owner, src]);
 
   // Jump straight to a file when opened from a search result.
   const [openedInitial, setOpenedInitial] = useState(false);
   useEffect(() => {
     if (initialPath && ref && !openedInitial) {
       setOpenedInitial(true);
-      api.blob(accountId, repo, ref, initialPath)
+      api.blob(accountId, repo, ref, initialPath, owner, src)
         .then((b) => setFile({ path: initialPath, blob: b }))
         .catch(() => {});
     }
-  }, [ref, initialPath, openedInitial, accountId, repo]);
+  }, [ref, initialPath, openedInitial, accountId, repo, owner, src]);
 
   function openFile(name) {
     const full = path ? `${path}/${name}` : name;
     setErr("");
-    api.blob(accountId, repo, ref, full)
+    api.blob(accountId, repo, ref, full, owner, src)
       .then((b) => setFile({ path: full, blob: b }))
       .catch((e) => setErr(e.message));
   }
@@ -129,7 +131,7 @@ export default function RepoBrowser({ accountId, repo, initialPath, onClose }) {
       <button className="back-link" onClick={onClose}>{t("repo.back")}</button>
       <div className="row spread" style={{ alignItems: "flex-start", marginTop: 4 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 26 }}>{repo}</h2>
+          <h2 style={{ margin: 0, fontSize: 26 }}>{title}</h2>
           {overview && (
             <div className="muted" style={{ marginTop: 2 }}>
               {[overview.meta.language, overview.meta.size != null && bytes((overview.meta.size || 0) * 1024),
@@ -149,9 +151,11 @@ export default function RepoBrowser({ accountId, repo, initialPath, onClose }) {
           {overview.meta.fork && <span className="metapill">🍴 fork</span>}
           {overview.meta.archived && <span className="metapill">📦 {t("repo.archived")}</span>}
           <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-            <a className="metapill blue" href={urls.repoDownload(accountId, repo, ref)}>⬇ Zip</a>
-            <a className="metapill" href={urls.repoBundle(accountId, repo)} title={t("repo.bundleTitle")}>⬇ .bundle</a>
-            <button className="metapill" onClick={() => { setRestoreName(repo); setRestorePriv(overview.meta.private ?? true); setRestoreResult(null); setRestoreOpen((v) => !v); }}>↑ {t("repo.restore")}</button>
+            <a className="metapill blue" href={urls.repoDownload(accountId, repo, ref, owner, src)}>⬇ Zip</a>
+            <a className="metapill" href={urls.repoBundle(accountId, repo, owner, src)} title={t("repo.bundleTitle")}>⬇ .bundle</a>
+            {isStarred
+              ? <a className="metapill" href={`https://github.com/${fullName}`} target="_blank" rel="noreferrer">↗ GitHub</a>
+              : <button className="metapill" onClick={() => { setRestoreName(repo); setRestorePriv(overview.meta.private ?? true); setRestoreResult(null); setRestoreOpen((v) => !v); }}>↑ {t("repo.restore")}</button>}
           </span>
         </div>
       )}
@@ -188,8 +192,8 @@ export default function RepoBrowser({ accountId, repo, initialPath, onClose }) {
           <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>{t("repo.overview")}</button>
           <button className={view === "files" ? "active" : ""} onClick={() => setView("files")}>{t("repo.files")}</button>
           <button className={view === "commits" ? "active" : ""} onClick={() => setView("commits")}>{t("repo.commits")}</button>
-          <button className={view === "issues" ? "active" : ""} onClick={() => setView("issues")}>Issues</button>
-          <button className={view === "pulls" ? "active" : ""} onClick={() => setView("pulls")}>PR</button>
+          {!isStarred && <button className={view === "issues" ? "active" : ""} onClick={() => setView("issues")}>Issues</button>}
+          {!isStarred && <button className={view === "pulls" ? "active" : ""} onClick={() => setView("pulls")}>PR</button>}
         </div>
         {["files", "commits"].includes(view) && refSelect}
       </div>
@@ -242,7 +246,7 @@ export default function RepoBrowser({ accountId, repo, initialPath, onClose }) {
                   <div className="ov-stat" onClick={() => setView("commits")}><b>{overview.commits}</b><span>{t("repo.commits")}</span></div>
                 </div>
               </div>
-              <div className="restore-note">{t("repo.restoreNote", { repo })}</div>
+              {!isStarred && <div className="restore-note">{t("repo.restoreNote", { repo })}</div>}
             </aside>
           </div>
         )
@@ -251,7 +255,7 @@ export default function RepoBrowser({ accountId, repo, initialPath, onClose }) {
       {view === "files" && !file && (
         <>
           <div className="crumbs">
-            <span className="crumb" onClick={() => loadTree("")}>{repo}</span>
+            <span className="crumb" onClick={() => loadTree("")}>{title}</span>
             {path.split("/").filter(Boolean).map((seg, i) => (
               <span key={i}> / <span className="crumb" onClick={() => crumbTo(i)}>{seg}</span></span>
             ))}
@@ -282,7 +286,7 @@ export default function RepoBrowser({ accountId, repo, initialPath, onClose }) {
         <div>
           <div className="row spread mb">
             <span className="crumb" onClick={() => setFile(null)}>← {file.path}</span>
-            <a className="btn-link" href={urls.raw(accountId, repo, ref, file.path)}>{t("repo.downloadFile")}</a>
+            <a className="btn-link" href={urls.raw(accountId, repo, ref, file.path, owner, src)}>{t("repo.downloadFile")}</a>
           </div>
           {file.blob.binary ? (
             <Empty>{t("repo.binaryFile", { size: bytes(file.blob.size) })}</Empty>
