@@ -133,8 +133,8 @@ export const api = {
 export const urls = {
   repoDownload: (id, repo, ref, owner = "", src = "") =>
     `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/download?ref=${encodeURIComponent(ref)}${_sq(owner, src, true)}`,
-  raw: (id, repo, ref, path, owner = "", src = "") =>
-    `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/raw?ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(path)}${_sq(owner, src, true)}`,
+  raw: (id, repo, ref, path, owner = "", src = "", inline = false) =>
+    `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/raw?ref=${encodeURIComponent(ref)}&path=${encodeURIComponent(path)}${_sq(owner, src, true)}${inline ? "&inline=1" : ""}`,
   snapshotDownload: (id, name) => `/api/accounts/${id}/snapshots/${name}/download`,
   gistDownload: (id, gid) => `/api/accounts/${id}/gists/${gid}/download`,
   accountDownload: (id) => `/api/accounts/${id}/download`,

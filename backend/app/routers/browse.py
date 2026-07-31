@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import mimetypes
 import os
 import re
 import subprocess
@@ -229,7 +230,7 @@ def commits(account_id: int, repo: str, ref: str = Query("HEAD"),
 
 @router.get("/{account_id}/repos/{repo}/raw")
 def raw(account_id: int, repo: str, ref: str = Query("HEAD"), path: str = Query(...),
-        owner: str = Query(""), src: str = Query(""),
+        owner: str = Query(""), src: str = Query(""), inline: bool = Query(False),
         session: Session = Depends(get_session)):
     gd = _git_dir(_account(account_id, session), repo, owner, src)
     _check_ref(ref)
@@ -238,6 +239,11 @@ def raw(account_id: int, repo: str, ref: str = Query("HEAD"), path: str = Query(
         raise HTTPException(400, "path required")
     data = _git(gd, "show", f"{ref}:{path}", binary=True)
     fname = path.rsplit("/", 1)[-1]
+    if inline:
+        # Serve with a guessed content type so README <img> tags render the file
+        # straight from the backup (no download prompt).
+        ctype = mimetypes.guess_type(fname)[0] or "application/octet-stream"
+        return Response(content=data, media_type=ctype)
     return Response(content=data, media_type="application/octet-stream",
                     headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 

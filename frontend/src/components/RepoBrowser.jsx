@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { marked } from "marked";
 import { api, urls } from "../api.js";
 import { bytes, relative } from "../lib/format.js";
@@ -30,6 +30,7 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
   const [thread, setThread] = useState(null);
   const [overview, setOverview] = useState(null);
   const [readmeHtml, setReadmeHtml] = useState("");
+  const readmeRef = useRef(null);
   const [err, setErr] = useState("");
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [restoreName, setRestoreName] = useState(repo);
@@ -113,6 +114,59 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
     const parts = path.split("/").filter(Boolean);
     loadTree(parts.slice(0, i + 1).join("/"));
   }
+
+  // Open a repo-relative link from the rendered README inside the panel: a file
+  // opens in the file view (a folder falls back to the tree), resolved from the
+  // backup rather than pointing at GitHub.
+  function openReadmeLink(relpath) {
+    const branch = overview?.default_branch || ref || "HEAD";
+    const p = relpath.replace(/^\.?\//, "").split(/[?#]/)[0].replace(/\/$/, "");
+    if (!p) return;
+    setView("files");
+    api.blob(accountId, repo, branch, p, owner, src)
+      .then((b) => setFile({ path: p, blob: b }))
+      .catch(() => { setFile(null); loadTree(p); });
+  }
+
+  function onReadmeClick(e) {
+    const a = e.target.closest("a");
+    if (!a || !readmeRef.current?.contains(a)) return;
+    if (a.dataset.anchor != null) {           // in-page heading link → scroll
+      e.preventDefault();
+      let el = null;
+      try { el = readmeRef.current.querySelector(`#${CSS.escape(a.dataset.anchor)}`); } catch { /* invalid id */ }
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      else window.open(`https://github.com/${fullName || repo}#${a.dataset.anchor}`, "_blank", "noopener");
+    } else if (a.dataset.relpath) {           // repo-relative link → open in-panel
+      e.preventDefault();
+      openReadmeLink(a.dataset.relpath);
+    }
+  }
+
+  // Rewrite the rendered README so it works against the backup instead of
+  // assuming github.com: images load from our raw endpoint, in-repo links open
+  // in-panel, #anchors scroll, and external links open in a new tab.
+  useEffect(() => {
+    const root = readmeRef.current;
+    if (!root || !readmeHtml) return;
+    const branch = overview?.default_branch || ref || "HEAD";
+    const slug = (s) => s.toLowerCase().trim().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-");
+    root.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach((h) => { if (!h.id) h.id = slug(h.textContent || ""); });
+    root.querySelectorAll("img").forEach((img) => {
+      const s = img.getAttribute("src") || "";
+      if (s && !/^(https?:|data:|\/\/)/i.test(s)) {
+        const p = s.replace(/^\.?\//, "").split(/[?#]/)[0];
+        if (p) img.src = urls.raw(accountId, repo, branch, p, owner, src, true);
+      }
+    });
+    root.querySelectorAll("a").forEach((a) => {
+      const href = a.getAttribute("href") || "";
+      if (/^(https?:|mailto:|\/\/)/i.test(href)) { a.target = "_blank"; a.rel = "noreferrer"; return; }
+      a.classList.add("md-link");
+      if (href.startsWith("#")) a.dataset.anchor = href.slice(1);
+      else if (href) a.dataset.relpath = href;
+    });
+  }, [readmeHtml, overview, ref, view, accountId, repo, owner, src, fullName]);
 
   const shortSha = ref.length >= 12 && !refs.branches.includes(ref) && !refs.tags.includes(ref);
 
@@ -220,7 +274,8 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
                     <svg width="15" height="15" viewBox="0 0 24 24" style={{ opacity: .6 }}><path d="M4 4h9l5 5v11H4zM13 4v5h5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" /></svg>
                     README{overview.readme ? "" : ".md"}
                   </div>
-                  <div className="readme markdown" dangerouslySetInnerHTML={{ __html: readmeHtml }} />
+                  <div className="readme markdown" ref={readmeRef} onClick={onReadmeClick}
+                    dangerouslySetInnerHTML={{ __html: readmeHtml }} />
                 </div>
               ) : <Empty>{t("repo.noReadme")}</Empty>}
             </div>
