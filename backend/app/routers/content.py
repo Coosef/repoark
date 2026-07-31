@@ -188,13 +188,13 @@ def repos(account_id: int, session: Session = Depends(get_session)):
         name = d.name
         if name in owned:
             m = owned[name]
-            out.append({"name": name, "size_bytes": _dir_size(d), "kind": "own",
+            out.append({"name": name, "size_bytes": _dir_size(d), "kind": "own", "src": "repositories",
                         "language": m.get("language"), "private": m.get("private"),
                         "fork": m.get("fork"), "archived": m.get("archived"),
                         "stars": m.get("stars"), "full_name": m.get("full_name")})
         elif name in starred:
             m = starred[name]
-            out.append({"name": name, "size_bytes": _dir_size(d), "kind": "starred",
+            out.append({"name": name, "size_bytes": _dir_size(d), "kind": "starred", "src": "repositories",
                         "language": m.get("language"), "private": m.get("private"),
                         "fork": m.get("fork"), "archived": m.get("archived"),
                         "stars": m.get("stargazers_count"), "full_name": m.get("full_name")})
@@ -202,9 +202,33 @@ def repos(account_id: int, session: Session = Depends(get_session)):
             # In repositories/ but in neither list — an orphan clone (e.g. a
             # cancelled starred download) or a repo since deleted from GitHub.
             # Labelled "other" so it's distinguishable and can be cleaned up.
-            out.append({"name": name, "size_bytes": _dir_size(d), "kind": "other",
+            out.append({"name": name, "size_bytes": _dir_size(d), "kind": "other", "src": "repositories",
                         "language": None, "private": None, "fork": None,
                         "archived": None, "stars": None, "full_name": None})
+
+    # "Download all starred" clones land in current/starred/<owner>/<repo> (the
+    # engine's --all-starred layout), NOT in repositories/, so they'd otherwise
+    # be invisible here. Surface each as a starred clone (kind=starred, src=starred)
+    # so the panel lists them with their size and can delete them individually.
+    starred_meta = {r.get("full_name"): r
+                    for r in _json(cur / "account" / "starred.json", []) if r.get("full_name")}
+    starred_root = cur / "starred"
+    if starred_root.is_dir():
+        for owner_dir in starred_root.iterdir():
+            if not owner_dir.is_dir():
+                continue
+            for repo_dir in owner_dir.iterdir():
+                if not repo_dir.is_dir():
+                    continue
+                full = f"{owner_dir.name}/{repo_dir.name}"
+                m = starred_meta.get(full, {})
+                out.append({"name": repo_dir.name, "full_name": full, "owner": owner_dir.name,
+                            "kind": "starred", "src": "starred",
+                            "size_bytes": _dir_size(repo_dir),
+                            "language": m.get("language"), "private": m.get("private"),
+                            "fork": m.get("fork"), "archived": m.get("archived"),
+                            "stars": m.get("stargazers_count")})
+
     out.sort(key=lambda r: r["size_bytes"], reverse=True)
     return out
 
@@ -258,7 +282,8 @@ def delete_repos(account_id: int, payload: DeleteReposBody,
     disk. Path-guarded so only real subfolders can be deleted.
     """
     account = _account(account_id, session)
-    root = (_current(account) / "repositories").resolve()
+    cur = _current(account)
+    root = (cur / "repositories").resolve()
     deleted, freed = 0, 0
     for name in payload.names:
         if not _SAFE_NAME.match(name or ""):
@@ -269,6 +294,23 @@ def delete_repos(account_id: int, payload: DeleteReposBody,
         freed += _dir_size(d)
         shutil.rmtree(d, ignore_errors=True)
         deleted += 1
+
+    # "Download all starred" clones live at current/starred/<owner>/<repo>; delete
+    # each requested full_name, then drop the owner folder if it's now empty.
+    starred_root = (cur / "starred").resolve()
+    for full in payload.starred:
+        parts = (full or "").split("/")
+        if len(parts) != 2 or not all(_SAFE_NAME.match(p) for p in parts):
+            continue
+        d = (starred_root / parts[0] / parts[1]).resolve()
+        if d.parent.parent != starred_root or not d.is_dir():
+            continue
+        freed += _dir_size(d)
+        shutil.rmtree(d, ignore_errors=True)
+        deleted += 1
+        owner_dir = starred_root / parts[0]
+        if owner_dir.is_dir() and not any(owner_dir.iterdir()):
+            owner_dir.rmdir()
     return {"deleted": deleted, "freed_bytes": freed}
 
 

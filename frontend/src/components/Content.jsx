@@ -67,14 +67,18 @@ export default function Content({ accountId, onMsg }) {
     }
   }
 
-  async function delNames(names) {
-    if (!names.length) return;
-    const msg = names.length === 1
-      ? t("content.delConfirm", { name: names[0] })
-      : t("content.delBulk", { n: names.length });
+  async function delItems(items) {
+    if (!items.length) return;
+    const msg = items.length === 1
+      ? t("content.delConfirm", { name: items[0].full_name || items[0].name })
+      : t("content.delBulk", { n: items.length });
     if (!confirm(msg)) return;
+    // Own/selected clones live in repositories/<name>; "download all" starred
+    // clones live in starred/<owner>/<repo> — route each to the right list.
+    const names = items.filter((r) => r.src !== "starred").map((r) => r.name);
+    const starred = items.filter((r) => r.src === "starred").map((r) => r.full_name);
     try {
-      const r = await api.deleteRepos(accountId, names);
+      const r = await api.deleteRepos(accountId, names, starred);
       onMsg && onMsg(t("content.deleted", { n: r.deleted, size: bytes(r.freed_bytes) }));
       setSel(new Set());
       setSelMode(false);
@@ -114,14 +118,20 @@ export default function Content({ accountId, onMsg }) {
       {ready && tab === "repos" && (() => {
         const all = data || [];
         const kind = (r) => r.kind || "own";
+        const rid = (r) => r.full_name || r.name;   // stable id (starred clones share names)
         const hasExtra = all.some((r) => kind(r) === "starred" || kind(r) === "other");
         const count = (k) => all.filter((r) => kind(r) === k).length;
         const rows = all
           .filter((r) => filter(r.name) || filter(r.full_name))
           .filter((r) => repoFilter === "all" || kind(r) === repoFilter);
-        const rowNames = rows.map((r) => r.name);
-        const allSel = rowNames.length > 0 && rowNames.every((n) => sel.has(n));
-        const toggle = (name) => setSel((s) => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; });
+        const rowIds = rows.map(rid);
+        const allSel = rowIds.length > 0 && rowIds.every((id) => sel.has(id));
+        const toggle = (id) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+        // Own/selected clones open the in-panel browser; "download all" starred
+        // clones aren't indexed for browsing, so they open on GitHub instead.
+        const openRepo = (r) => r.src === "starred"
+          ? window.open(`https://github.com/${r.full_name}`, "_blank", "noopener")
+          : setRepo({ name: r.name });
         const seg = (k, label) => <button className={repoFilter === k ? "on" : ""} onClick={() => setRepoFilter(k)}>{label}</button>;
         const amber = { marginLeft: 8, background: "var(--amberT)", color: "var(--amber)" };
         return (
@@ -138,8 +148,8 @@ export default function Content({ accountId, onMsg }) {
               <div className="row" style={{ gap: 10 }}>
                 {selMode ? (
                   <>
-                    <button className="link" onClick={() => setSel(new Set(allSel ? [] : rowNames))}>{t("content.selectAll")}</button>
-                    <button className="stop-btn" disabled={sel.size === 0} onClick={() => delNames([...sel])}>{t("common.delete")} ({sel.size})</button>
+                    <button className="link" onClick={() => setSel(new Set(allSel ? [] : rowIds))}>{t("content.selectAll")}</button>
+                    <button className="stop-btn" disabled={sel.size === 0} onClick={() => delItems(rows.filter((r) => sel.has(rid(r))))}>{t("common.delete")} ({sel.size})</button>
                     <button className="link" onClick={() => { setSelMode(false); setSel(new Set()); }}>{t("common.cancel")}</button>
                   </>
                 ) : (
@@ -150,10 +160,11 @@ export default function Content({ accountId, onMsg }) {
             <div className="group">
               {rows.map((r) => {
                 const k = kind(r);
-                const checked = sel.has(r.name);
+                const id = rid(r);
+                const checked = sel.has(id);
                 return (
-                  <div className={`frow ${selMode && checked ? "sel" : ""}`} key={r.name}
-                    onClick={() => selMode ? toggle(r.name) : setRepo({ name: r.name })}>
+                  <div className={`frow ${selMode && checked ? "sel" : ""}`} key={id}
+                    onClick={() => selMode ? toggle(id) : openRepo(r)}>
                     {selMode
                       ? <input type="checkbox" checked={checked} readOnly style={{ width: "auto", pointerEvents: "none" }} />
                       : k === "starred"
@@ -171,7 +182,7 @@ export default function Content({ accountId, onMsg }) {
                       <div className="row-desc">{[bytes(r.size_bytes), r.language, r.private ? t("content.private") : null, gone.has(r.name) ? t("content.onlyBackup") : null].filter(Boolean).join(" · ")}</div>
                     </div>
                     {!selMode && (
-                      <button className="row-del" title={t("common.delete")} onClick={(e) => { e.stopPropagation(); delNames([r.name]); }}>
+                      <button className="row-del" title={t("common.delete")} onClick={(e) => { e.stopPropagation(); delItems([r]); }}>
                         <svg width="16" height="16" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13M10 11v6M14 11v6" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg>
                       </button>
                     )}

@@ -74,7 +74,8 @@ class RestoreBody(BaseModel):
 
 
 class DeleteReposBody(BaseModel):
-    names: list[str] = []    # backed-up repo folder names to permanently delete
+    names: list[str] = []      # repositories/<name> folders to permanently delete
+    starred: list[str] = []    # starred/<owner>/<repo> full_names to permanently delete
 
 
 class PruneBody(BaseModel):
