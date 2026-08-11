@@ -3,6 +3,13 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.6.1]
+### Fixed
+- The friendly schedule builder now understands weekday ranges (e.g. `1-5` =
+  Mon–Fri) instead of silently dropping to the raw-cron box.
+- The dashboard's 4-second refresh no longer re-renders the page (or re-fetches
+  the deleted-count) when nothing actually changed.
+
 ## [1.6.0]
 ### Changed
 - Destructive actions (delete a repo backup, account, job, or destination) and

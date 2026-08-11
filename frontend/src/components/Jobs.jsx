@@ -100,6 +100,27 @@ function weekdayLabel(lang, dow) {
 // Best-effort read of a cron string back into the friendly builder. Returns null
 // for anything that isn't one of our three simple shapes (then we fall back to
 // the raw "custom" editor so hand-written crons are never clobbered).
+// Expand a day-of-week field into a sorted unique 0-6 list, understanding both
+// comma lists ("0,6") and ranges ("1-5" = Mon-Fri). 7 is Sunday (== 0). Returns
+// null for anything we can't represent in the friendly picker.
+function expandDow(raw) {
+  const norm = raw.replace(/\b7\b/g, "0");
+  const out = new Set();
+  for (const part of norm.split(",")) {
+    const rng = part.match(/^(\d)-(\d)$/);
+    if (rng) {
+      const a = +rng[1], b = +rng[2];
+      if (a > b || a > 6 || b > 6) return null;
+      for (let d = a; d <= b; d++) out.add(d);
+    } else if (/^\d$/.test(part) && +part <= 6) {
+      out.add(+part);
+    } else {
+      return null;
+    }
+  }
+  return out.size ? [...out].sort((x, y) => x - y) : null;
+}
+
 function parseCron(cron) {
   const p = (cron || "").trim().split(/\s+/);
   if (p.length !== 5) return null;
@@ -107,10 +128,11 @@ function parseCron(cron) {
   const int = (s) => /^\d+$/.test(s);
   if (!int(m) || !int(h) || mon !== "*") return null;
   const minute = Math.min(59, +m), hour = Math.min(23, +h);
-  const dow = dowRaw.replace(/\b7\b/g, "0");
   if (dom === "*" && dowRaw === "*") return { freq: "daily", hour, minute, days: [1], dom: 1 };
-  if (dom === "*" && /^[0-6](,[0-6])*$/.test(dow))
-    return { freq: "weekly", hour, minute, days: [...new Set(dow.split(",").map(Number))], dom: 1 };
+  if (dom === "*") {
+    const days = expandDow(dowRaw);
+    if (days) return { freq: "weekly", hour, minute, days, dom: 1 };
+  }
   if (int(dom) && dowRaw === "*")
     return { freq: "monthly", hour, minute, days: [1], dom: Math.min(31, Math.max(1, +dom)) };
   return null;

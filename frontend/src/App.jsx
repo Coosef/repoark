@@ -50,8 +50,16 @@ export default function App() {
   const { lang, setLang, t } = useLang();
 
   const refresh = useCallback(() => {
-    api.listAccounts().then((a) => { setAccounts(a); setLoaded(true); }).catch(() => {});
-    api.listJobs().then(setJobs).catch(() => {});
+    // Keep the previous array reference when nothing actually changed, so the
+    // 4s poll doesn't re-render the tree (or re-fire the deleted-count effect
+    // that depends on `jobs`) on every tick.
+    const keepIfSame = (prev, next) =>
+      JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+    api.listAccounts().then((a) => {
+      setLoaded(true);
+      setAccounts((prev) => keepIfSame(prev, a));
+    }).catch(() => {});
+    api.listJobs().then((j) => setJobs((prev) => keepIfSame(prev, j))).catch(() => {});
   }, []);
 
   useEffect(() => {
