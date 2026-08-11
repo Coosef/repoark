@@ -3,6 +3,13 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.8.0]
+### Added
+- A **Verify backup** button per account (a real "restore drill"): it actually
+  clones a random sample of the backed-up mirrors into a throwaway working tree
+  and confirms they check out — proving the backup is genuinely restorable, not
+  just that its git objects are reachable. Reports how many repos passed.
+
 ## [1.7.0]
 ### Added
 - A **Test token** button on the connect-account form: check a GitHub token

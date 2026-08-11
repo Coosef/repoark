@@ -85,6 +85,14 @@ def _json(path: Path, default):
         return default
 
 
+@router.post("/{account_id}/restore-drill")
+def restore_drill(account_id: int, session: Session = Depends(get_session)):
+    """Actually restore-test a sample of the backed-up repos (real clone to a
+    temp dir), so the user can confirm the backup is usable — not just present."""
+    account = _account(account_id, session)
+    return health.restore_drill(account.username)
+
+
 @router.get("/{account_id}/summary")
 def summary(account_id: int, session: Session = Depends(get_session)):
     account = _account(account_id, session)

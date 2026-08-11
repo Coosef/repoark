@@ -88,6 +88,28 @@ function ConnectForm({ onConnected, onMsg }) {
 export default function Accounts({ accounts, jobs, onRefresh, onAddJob, onMsg }) {
   const { t } = useLang();
   const { confirm, promptSecret } = useDialog();
+  const [drilling, setDrilling] = useState(0);
+
+  async function drill(acc) {
+    setDrilling(acc.id);
+    onMsg(t("acc.drillRunning"));
+    try {
+      const r = await api.restoreDrill(acc.id);
+      if (r.total === 0) {
+        onMsg(t("acc.drillEmpty"));
+      } else if (r.ok) {
+        onMsg(t("acc.drillOk", { ok: r.ok_count, n: r.sampled }));
+      } else {
+        const bad = (r.tested || []).filter((x) => !x.ok).map((x) => x.repo).join(", ");
+        onMsg(t("acc.drillFail", { repos: bad }));
+      }
+    } catch (e) {
+      onMsg(t("toast.error", { msg: e.message }));
+    } finally {
+      setDrilling(0);
+    }
+  }
+
   async function updateToken(acc) {
     const token = await promptSecret({
       title: t("acc.updateToken"),
@@ -133,6 +155,9 @@ export default function Accounts({ accounts, jobs, onRefresh, onAddJob, onMsg })
               <a className="btn-link" href={urls.accountDownload(a.id)}>{t("acc.downloadAll")}</a>
             </div>
             <div className="row">
+              <button className="link" onClick={() => drill(a)} disabled={drilling === a.id}>
+                {drilling === a.id ? t("dest.testing") : t("acc.restoreDrill")}
+              </button>
               <button className="link" onClick={() => updateToken(a)}>{t("acc.updateToken")}</button>
               <button className="link danger" onClick={() => remove(a)}>{t("common.remove")}</button>
             </div>

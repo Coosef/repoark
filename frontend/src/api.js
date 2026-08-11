@@ -56,6 +56,9 @@ export const api = {
   testToken: (token, org) => req("POST", "/api/accounts/test-token", { token, org: org || null }),
   updateToken: (id, token) => req("PUT", `/api/accounts/${id}`, { token }),
   deleteAccount: (id) => req("DELETE", `/api/accounts/${id}`),
+  // Restore-test a sample of the backed-up repos (real clone) to prove the
+  // backup is actually usable, not just present.
+  restoreDrill: (id) => req("POST", `/api/accounts/${id}/restore-drill`),
   deleted: (id) => req("GET", `/api/accounts/${id}/deleted`),
 
   version: () => req("GET", "/api/health"),
