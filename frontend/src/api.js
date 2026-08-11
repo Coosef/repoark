@@ -59,6 +59,8 @@ export const api = {
   // Restore-test a sample of the backed-up repos (real clone) to prove the
   // backup is actually usable, not just present.
   restoreDrill: (id) => req("POST", `/api/accounts/${id}/restore-drill`),
+  // Reclaim space from 'download all starred' clones you no longer star.
+  pruneUnstarred: (id) => req("POST", `/api/accounts/${id}/prune-unstarred`),
   deleted: (id) => req("GET", `/api/accounts/${id}/deleted`),
 
   version: () => req("GET", "/api/health"),

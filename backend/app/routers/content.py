@@ -338,6 +338,44 @@ def delete_repos(account_id: int, payload: DeleteReposBody,
     return {"deleted": deleted, "freed_bytes": freed}
 
 
+def prune_unstarred(username: str) -> dict:
+    """Delete 'download all starred' clones that are no longer starred.
+
+    Compares current/starred/<owner>/<repo> against the account's current
+    starred.json and removes clones whose full_name is no longer in the list,
+    reclaiming space as the user un-stars things. Guard: if starred.json is
+    missing or empty (e.g. a failed fetch) we do nothing — never wipe the whole
+    tree just because the list is momentarily unavailable."""
+    cur = config.BACKUPS_DIR / username / "current"
+    starred_root = cur / "starred"
+    if not starred_root.is_dir():
+        return {"removed": 0, "freed_bytes": 0}
+    current = {(r.get("full_name") or "").strip()
+               for r in _json(cur / "account" / "starred.json", [])}
+    current.discard("")
+    if not current:
+        return {"removed": 0, "freed_bytes": 0, "note": "starred list unavailable"}
+    removed, freed = 0, 0
+    for owner_dir in list(starred_root.iterdir()):
+        if not owner_dir.is_dir():
+            continue
+        for repo_dir in list(owner_dir.iterdir()):
+            if repo_dir.is_dir() and f"{owner_dir.name}/{repo_dir.name}" not in current:
+                freed += _dir_size(repo_dir)
+                shutil.rmtree(repo_dir, ignore_errors=True)
+                removed += 1
+        if owner_dir.is_dir() and not any(owner_dir.iterdir()):
+            owner_dir.rmdir()
+    return {"removed": removed, "freed_bytes": freed}
+
+
+@router.post("/{account_id}/prune-unstarred")
+def prune_unstarred_route(account_id: int, session: Session = Depends(get_session)):
+    """Manually reclaim space from starred clones you no longer star."""
+    account = _account(account_id, session)
+    return prune_unstarred(account.username)
+
+
 @router.get("/{account_id}/starred-live")
 def starred_live(account_id: int, session: Session = Depends(get_session)):
     """Fetch the account's starred repos live from GitHub (for the job picker)."""

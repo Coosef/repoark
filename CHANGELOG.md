@@ -3,6 +3,14 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.11.0]
+### Added
+- **Auto-cleanup of un-starred repos.** When a job downloads *all* starred
+  repos, RepoArk now removes clones you no longer star after each successful
+  backup, so the starred tree stops growing forever. Also a manual "Clean
+  unstarred" button per account. Guarded so it never wipes the tree when the
+  starred list is momentarily unavailable.
+
 ## [1.10.0]
 ### Changed
 - **Safer remote sync.** A local fault can no longer wipe the offsite copy:

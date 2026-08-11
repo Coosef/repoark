@@ -236,6 +236,15 @@ def _finalize(session: Session, account: Account, job: Job, run: Run, *, prune: 
         pass
     # After a successful backup, verify integrity + push to remote destinations.
     if prune:
+        # If this job downloads ALL starred repos, drop clones the user no longer
+        # stars so the starred tree doesn't grow forever. (Lazy import to avoid a
+        # startup import cycle with the routers package.)
+        if job.starred and job.starred_clone and not _selected_starred(job):
+            try:
+                from .routers import content as _content
+                _content.prune_unstarred(account.username)
+            except Exception:
+                pass
         try:
             health.update_account_health(session, account)
         except Exception:

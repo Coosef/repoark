@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, urls } from "../api.js";
-import { datetime } from "../lib/format.js";
+import { datetime, bytes } from "../lib/format.js";
 import { useLang } from "../i18n.jsx";
 import { useDialog } from "./Dialog.jsx";
 
@@ -89,6 +89,21 @@ export default function Accounts({ accounts, jobs, onRefresh, onAddJob, onMsg })
   const { t } = useLang();
   const { confirm, promptSecret } = useDialog();
   const [drilling, setDrilling] = useState(0);
+  const [pruning, setPruning] = useState(0);
+
+  async function pruneUnstarred(acc) {
+    setPruning(acc.id);
+    try {
+      const r = await api.pruneUnstarred(acc.id);
+      onMsg(r.removed > 0
+        ? t("acc.prunedOk", { n: r.removed, size: bytes(r.freed_bytes) })
+        : t("acc.prunedNone"));
+    } catch (e) {
+      onMsg(t("toast.error", { msg: e.message }));
+    } finally {
+      setPruning(0);
+    }
+  }
 
   async function drill(acc) {
     setDrilling(acc.id);
@@ -157,6 +172,9 @@ export default function Accounts({ accounts, jobs, onRefresh, onAddJob, onMsg })
             <div className="row">
               <button className="link" onClick={() => drill(a)} disabled={drilling === a.id}>
                 {drilling === a.id ? t("dest.testing") : t("acc.restoreDrill")}
+              </button>
+              <button className="link" onClick={() => pruneUnstarred(a)} disabled={pruning === a.id}>
+                {pruning === a.id ? t("common.loading") : t("acc.pruneUnstarred")}
               </button>
               <button className="link" onClick={() => updateToken(a)}>{t("acc.updateToken")}</button>
               <button className="link danger" onClick={() => remove(a)}>{t("common.remove")}</button>
