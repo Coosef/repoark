@@ -241,9 +241,16 @@ def raw(account_id: int, repo: str, ref: str = Query("HEAD"), path: str = Query(
     fname = path.rsplit("/", 1)[-1]
     if inline:
         # Serve with a guessed content type so README <img> tags render the file
-        # straight from the backup (no download prompt).
+        # straight from the backup (no download prompt). This content comes from
+        # a backed-up repo (incl. starred third-party repos), so it is untrusted:
+        # only serve genuine image types inline; anything that could be rendered
+        # as active content (HTML/XML/etc.) is downgraded to text/plain, and
+        # nosniff stops the browser from re-interpreting it.
         ctype = mimetypes.guess_type(fname)[0] or "application/octet-stream"
-        return Response(content=data, media_type=ctype)
+        if not ctype.startswith("image/"):
+            ctype = "text/plain; charset=utf-8"
+        return Response(content=data, media_type=ctype,
+                        headers={"X-Content-Type-Options": "nosniff"})
     return Response(content=data, media_type="application/octet-stream",
                     headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 

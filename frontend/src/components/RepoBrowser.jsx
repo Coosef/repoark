@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
 import { api, urls } from "../api.js";
 import { bytes, relative } from "../lib/format.js";
 import { Empty } from "./ui.jsx";
@@ -61,7 +62,10 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
       setOverview(o);
       if (o.readme) {
         api.blob(accountId, repo, o.default_branch || "HEAD", o.readme, owner, src)
-          .then((b) => !b.binary && setReadmeHtml(marked.parse(b.text || "")))
+          // README content is untrusted (especially for starred third-party
+          // repos), so sanitize the rendered HTML before injecting it — this
+          // strips <script>, on* handlers, javascript: URLs, etc.
+          .then((b) => !b.binary && setReadmeHtml(DOMPurify.sanitize(marked.parse(b.text || ""))))
           .catch(() => {});
       }
     }).catch(() => {});

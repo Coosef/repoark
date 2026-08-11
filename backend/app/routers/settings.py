@@ -4,7 +4,7 @@ from __future__ import annotations
 import shutil
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlmodel import Session, select
 
@@ -80,7 +80,15 @@ def export_config(session: Session = Depends(get_session)):
     Secrets (tokens, passwords) are DECRYPTED into the file so it can be
     restored on a fresh container (e.g. after moving to CasaOS). The file is
     sensitive — the panel warns the user to keep it safe.
+
+    Because this dumps every credential in clear text, it is refused unless a
+    panel password is set: when the panel is open (no password) the middleware
+    can't authenticate the caller, so an open panel must not expose this at all.
     """
+    if not notify.get_settings(session).panel_password_hash:
+        raise HTTPException(
+            403, "Dışa aktarma tüm sırları (token/şifre) içerir; önce "
+                 "Ayarlar'dan bir panel şifresi belirleyin.")
     accounts = session.exec(select(Account)).all()
     jobs = session.exec(select(Job)).all()
     dests = session.exec(select(Destination)).all()
@@ -172,7 +180,10 @@ def import_config(payload: dict, session: Session = Depends(get_session)):
             s.smtp_pass_enc = crypto.encrypt(st["smtp_pass"])
         if st.get("telegram_token"):
             s.telegram_token_enc = crypto.encrypt(st["telegram_token"])
-        if st.get("panel_password_hash"):
+        # Only adopt a panel password from an imported file when this panel has
+        # none yet (fresh restore). Never let an uploaded file overwrite an
+        # existing password — that would be a takeover of a configured panel.
+        if st.get("panel_password_hash") and not s.panel_password_hash:
             s.panel_password_hash = st["panel_password_hash"]
         session.add(s)
         session.commit()

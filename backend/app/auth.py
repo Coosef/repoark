@@ -14,7 +14,7 @@ import os
 
 from . import crypto
 
-SESSION_TTL = 60 * 60 * 24 * 30          # 30 days
+SESSION_TTL = 60 * 60 * 24 * 7           # 7 days
 COOKIE_NAME = "rk_session"
 _ITERATIONS = 200_000
 _SESSION_MARKER = b"repoark-panel-session"

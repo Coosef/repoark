@@ -5,6 +5,7 @@ path serves the built React panel (with SPA fallback to index.html).
 """
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -20,6 +21,8 @@ from .models import Settings
 from .routers import accounts, browse, content, destinations, jobs, runs, settings
 from .routers import auth as auth_router
 
+log = logging.getLogger("repoark")
+
 # The frontend build is copied here in the Docker image (see Dockerfile).
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -31,6 +34,17 @@ APP_VERSION = os.environ.get("APP_VERSION", "dev")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
+    # Loud warning when the panel is left open (no password). On a LAN, an open
+    # panel exposes backups and can trigger token-authenticated actions.
+    try:
+        with db.new_session() as s:
+            row = s.get(Settings, 1)
+            if not (row and row.panel_password_hash):
+                log.warning(
+                    "SECURITY: panel has NO password set — the API is open to "
+                    "anyone who can reach this port. Set a password in Settings.")
+    except Exception:
+        pass
     scheduler.start()
     try:
         yield
@@ -57,6 +71,35 @@ async def require_login(request: Request, call_next):
         if locked and not auth.valid_session(request.cookies.get(auth.COOKIE_NAME, "")):
             return JSONResponse({"detail": "Giriş gerekli"}, status_code=401)
     return await call_next(request)
+
+
+# --- Security headers ---
+# Applied to every response (added after require_login so it wraps it and 401s
+# get the headers too). The CSP allows the SPA's own hashed assets and same-origin
+# XHR, permits inline styles (React style props + rendered README), and allows
+# https/data images so README badges (shields.io, etc.) still render — but blocks
+# inline/remote scripts, framing, and plugins, which neutralizes a hostile README.
+_CSP = (
+    "default-src 'self'; "
+    "img-src 'self' data: https:; "
+    "style-src 'self' 'unsafe-inline'; "
+    "script-src 'self'; "
+    "connect-src 'self'; "
+    "font-src 'self' data:; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'"
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("Content-Security-Policy", _CSP)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    return response
 
 
 app.include_router(auth_router.router)
