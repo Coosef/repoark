@@ -3,6 +3,7 @@ import { api, urls } from "../api.js";
 import { bytes } from "../lib/format.js";
 import { Empty, Switch, ISquare } from "./ui.jsx";
 import Destinations from "./Destinations.jsx";
+import Accounts from "./Accounts.jsx";
 import { useLang, LANGS } from "../i18n.jsx";
 
 function PanelPassword({ onMsg }) {
@@ -107,7 +108,7 @@ function ConfigBackup({ onMsg }) {
   );
 }
 
-export default function Settings({ accounts = [], onMsg, theme, setTheme }) {
+export default function Settings({ accounts = [], jobs = [], onRefresh, onAddJob, onMsg, theme, setTheme }) {
   const { t, lang, setLang } = useLang();
   const [s, setS] = useState(null);
   const [store, setStore] = useState(null);
@@ -147,6 +148,10 @@ export default function Settings({ accounts = [], onMsg, theme, setTheme }) {
 
   return (
     <div style={{ maxWidth: 720 }}>
+      {/* Accounts — connect a GitHub account, update its token, or remove it */}
+      <div className="group-label">{t("nav.accounts")}</div>
+      <Accounts accounts={accounts} jobs={jobs} onRefresh={onRefresh} onAddJob={onAddJob} onMsg={onMsg} />
+
       {/* Notifications */}
       <div className="group-label">{t("set.notifications")}</div>
       <div className="group">

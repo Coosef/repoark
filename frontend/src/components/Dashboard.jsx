@@ -148,7 +148,7 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
       {/* Proactive alerts: expiring tokens + failing jobs */}
       {alerts.token.map((a) => (
         <div className="group" key={"tok" + a.account_id} style={{ marginTop: 16 }}>
-          <div className="row-item tap" onClick={() => onGoTab("accounts")}>
+          <div className="row-item tap" onClick={() => onGoTab("settings")}>
             <div className="isq lg isq-amber">⚠️</div>
             <div className="row-body">
               <div className="row-title">{a.expired ? t("alert.tokenExpired", { user: a.username }) : t("alert.tokenExpiring", { user: a.username, days: a.days })}</div>

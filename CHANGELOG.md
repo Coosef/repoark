@@ -3,6 +3,13 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.6.2]
+### Changed
+- Account management (connect a GitHub account, update its token, remove it) now
+  lives in **Settings** where users expect it, instead of only opening from the
+  sidebar account card. The account card and the token-expiry alert now open
+  Settings too.
+
 ## [1.6.1]
 ### Fixed
 - The friendly schedule builder now understands weekday ranges (e.g. `1-5` =

@@ -184,7 +184,7 @@ export default function App() {
         )}
 
         {acc && (
-          <button className="acct-card" onClick={() => setTab("accounts")}>
+          <button className="acct-card" onClick={() => setTab("settings")}>
             <div className="acct-avatar">{acc.username?.[0]?.toUpperCase() || "?"}</div>
             <div style={{ minWidth: 0 }}>
               <div className="acct-name">{acc.is_org ? acc.username : "@" + acc.username}</div>
@@ -229,7 +229,7 @@ export default function App() {
           {tab === "kasa" && <Kasa accountId={activeAccount} onMsg={setMsg} />}
           {tab === "content" && <Content accountId={activeAccount} onMsg={setMsg} />}
           {tab === "history" && <History jobs={jobs} focusJobId={historyFocus} />}
-          {tab === "settings" && <Settings accounts={accounts} onMsg={setMsg} theme={theme} setTheme={setTheme} />}
+          {tab === "settings" && <Settings accounts={accounts} jobs={jobs} onRefresh={refresh} onAddJob={addJob} onMsg={setMsg} theme={theme} setTheme={setTheme} />}
         </div>
       </main>
 
