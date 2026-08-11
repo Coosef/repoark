@@ -3,6 +3,13 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.14.0]
+### Security
+- **Changing the panel password now invalidates all existing sessions.** Session
+  cookies are tagged with the current password, so a captured or old cookie stops
+  working the moment the password changes (previously it stayed valid for up to
+  7 days). Everyone is asked to log in once after this upgrade.
+
 ## [1.13.0]
 ### Security
 - **Encrypted config export.** The setup export (which contains every token and

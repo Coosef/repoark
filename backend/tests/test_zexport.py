@@ -33,3 +33,18 @@ def test_encrypted_export_then_import():
 
         blob["_passphrase"] = "wrong"
         assert client.post("/api/config/import", json=blob).status_code == 400
+
+        # Clean up so the next test starts from an unlocked panel.
+        client.post("/api/auth/set-password", json={"current": "panelpass1", "new": ""})
+
+
+def test_password_change_invalidates_old_sessions():
+    with TestClient(app) as client:
+        client.post("/api/auth/set-password", json={"current": "", "new": "first-pass"})
+        old = client.cookies.get("rk_session")
+        assert old
+        assert client.get("/api/auth/status", cookies={"rk_session": old}).json()["authed"] is True
+        # Changing the password must kill sessions issued under the old one.
+        client.post("/api/auth/set-password", json={"current": "first-pass", "new": "second-pass"})
+        assert client.get("/api/auth/status", cookies={"rk_session": old}).json()["authed"] is False
+        client.post("/api/auth/set-password", json={"current": "second-pass", "new": ""})

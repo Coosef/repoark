@@ -40,16 +40,24 @@ def verify_password(password: str, stored: str) -> bool:
         return False
 
 
-def make_session() -> str:
-    """Issue a signed session token (Fernet embeds the issue time for TTL)."""
-    return crypto._get_fernet().encrypt(_SESSION_MARKER).decode()
+def _bind(secret: str) -> bytes:
+    """A short tag derived from the current panel password hash. Embedding it in
+    the session means changing the password invalidates every old session."""
+    return hashlib.sha256((secret or "").encode()).digest()[:8]
 
 
-def valid_session(token: str) -> bool:
+def make_session(bind: str = "") -> str:
+    """Issue a signed session token (Fernet embeds the issue time for TTL),
+    tagged with the current password so old sessions die on a password change."""
+    return crypto._get_fernet().encrypt(_SESSION_MARKER + b"|" + _bind(bind)).decode()
+
+
+def valid_session(token: str, bind: str = "") -> bool:
     if not token:
         return False
     try:
         data = crypto._get_fernet().decrypt(token.encode(), ttl=SESSION_TTL)
-        return data == _SESSION_MARKER
+        marker, _, tag = data.partition(b"|")
+        return marker == _SESSION_MARKER and tag == _bind(bind)
     except Exception:
         return False

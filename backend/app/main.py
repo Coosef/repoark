@@ -68,7 +68,7 @@ async def require_login(request: Request, call_next):
         with db.new_session() as s:
             row = s.get(Settings, 1)
             locked = bool(row and row.panel_password_hash)
-        if locked and not auth.valid_session(request.cookies.get(auth.COOKIE_NAME, "")):
+        if locked and not auth.valid_session(request.cookies.get(auth.COOKIE_NAME, ""), row.panel_password_hash):
             return JSONResponse({"detail": "Giriş gerekli"}, status_code=401)
     return await call_next(request)
 

@@ -46,7 +46,7 @@ def _cookie_secure(request: Request) -> bool:
 def status(request: Request, session: Session = Depends(get_session)):
     s = notify.get_settings(session)
     enabled = bool(s.panel_password_hash)
-    authed = (not enabled) or auth.valid_session(request.cookies.get(auth.COOKIE_NAME, ""))
+    authed = (not enabled) or auth.valid_session(request.cookies.get(auth.COOKIE_NAME, ""), s.panel_password_hash)
     return {"enabled": enabled, "authed": authed}
 
 
@@ -74,7 +74,7 @@ def login(payload: LoginBody, request: Request, response: Response,
 
     _LOGIN_FAILS.pop(ip, None)  # clean slate on success
     response.set_cookie(
-        auth.COOKIE_NAME, auth.make_session(),
+        auth.COOKIE_NAME, auth.make_session(s.panel_password_hash),
         httponly=True, samesite="lax", secure=_cookie_secure(request),
         max_age=auth.SESSION_TTL,
     )
@@ -91,7 +91,7 @@ def logout(response: Response):
 def set_password(payload: PasswordBody, request: Request, response: Response,
                  session: Session = Depends(get_session)):
     s = notify.get_settings(session)
-    logged_in = auth.valid_session(request.cookies.get(auth.COOKIE_NAME, ""))
+    logged_in = auth.valid_session(request.cookies.get(auth.COOKIE_NAME, ""), s.panel_password_hash)
     # Changing/removing an existing password needs proof: a live session or the
     # current password.
     if s.panel_password_hash and not (logged_in or auth.verify_password(payload.current, s.panel_password_hash)):
@@ -112,7 +112,7 @@ def set_password(payload: PasswordBody, request: Request, response: Response,
     session.add(s)
     session.commit()
     response.set_cookie(
-        auth.COOKIE_NAME, auth.make_session(),
+        auth.COOKIE_NAME, auth.make_session(s.panel_password_hash),
         httponly=True, samesite="lax", secure=_cookie_secure(request),
         max_age=auth.SESSION_TTL,
     )
