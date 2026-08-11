@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -37,10 +38,25 @@ def _current(account: Account) -> Path:
     return config.BACKUPS_DIR / account.username / "current"
 
 
+# Directory sizes are expensive to compute (a large starred tree is tens of
+# thousands of loose objects) and the dashboard re-reads them on every refresh,
+# so memoize per-path for a short window. Sizes are approximate stats, so a few
+# seconds of staleness is fine; a fresh backup or delete supersedes it quickly.
+_SIZE_TTL = 30.0
+_size_cache: dict[str, tuple[float, int]] = {}
+
+
 def _dir_size(path: Path) -> int:
     if not path.exists():
         return 0
-    return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
+    key = str(path)
+    now = time.monotonic()
+    hit = _size_cache.get(key)
+    if hit and now - hit[0] < _SIZE_TTL:
+        return hit[1]
+    size = sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
+    _size_cache[key] = (now, size)
+    return size
 
 
 def _breakdown(cur: Path) -> dict:

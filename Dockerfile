@@ -3,8 +3,8 @@
 # ---- Stage 1: build the React panel ----
 FROM node:20-alpine AS frontend
 WORKDIR /fe
-COPY frontend/package.json ./
-RUN npm install
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
@@ -20,8 +20,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 # git + git-lfs: required by the github-backup engine to clone repos.
 # rclone: used to sync backups to S3-compatible remote destinations.
+# tini: a real init as PID 1 so SIGTERM on stop/update is forwarded and the
+#       git children spawned by a backup are reaped instead of orphaned.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git git-lfs ca-certificates rclone \
+    && apt-get install -y --no-install-recommends git git-lfs ca-certificates rclone tini \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -34,4 +36,11 @@ COPY --from=frontend /fe/dist ./static
 EXPOSE 8000
 VOLUME ["/data"]
 
+# Fail the container health when the API stops answering, so CasaOS/Docker can
+# restart a wedged process (restart: unless-stopped only catches a full exit).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status==200 else 1)"
+
+# tini as PID 1 (see apt install above) for correct signal handling / reaping.
+ENTRYPOINT ["tini", "--"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
