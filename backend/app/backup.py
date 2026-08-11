@@ -14,21 +14,64 @@ button and by the scheduler. It:
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from . import config, crypto, engine, github, health, notify, progress, sync
 from .models import Account, Job, Run, utcnow
+
+log = logging.getLogger("backup")
 
 # github-backup logs "Retrieving <owner>/<repo> issues" once per repository —
 # a reliable per-repo marker for both fresh clones and incremental updates.
 _ISSUES_RE = re.compile(r"Retrieving (\S+) issues")
 # Destination path in the real-time "Cloning <name> repository from ... to <dest>" line.
 _CLONE_RE = re.compile(r"/(repositories|gists)/([^/]+)/repository")
+
+# Refuse to start a backup with less than this much free disk, so a run can
+# never fill the volume and leave a half-written (corrupt) mirror behind.
+_MIN_FREE_BYTES = int(os.environ.get("REPOARK_MIN_FREE_MB", "500")) * 1024 * 1024
+# Keep at most this many run-history rows per job (0 = unlimited). Prevents the
+# Run table (and its captured logs) from growing without bound.
+_RUN_KEEP = int(os.environ.get("REPOARK_RUN_HISTORY", "200"))
+
+# Per-job lock: the scheduler tick and the "Run now" button both call run_job,
+# and APScheduler's max_instances=1 only guards a job against overlapping
+# *itself*. Two concurrent github-backup runs writing the same bare mirrors
+# would corrupt them, so run_job takes this before touching anything.
+_locks_guard = threading.Lock()
+_job_locks: dict[int, threading.Lock] = {}
+
+
+def _job_lock(job_id: int) -> threading.Lock:
+    with _locks_guard:
+        lk = _job_locks.get(job_id)
+        if lk is None:
+            lk = _job_locks[job_id] = threading.Lock()
+        return lk
+
+
+def _prune_runs(session: Session, job_id: int) -> None:
+    """Delete run-history rows beyond the most recent _RUN_KEEP for this job."""
+    if _RUN_KEEP <= 0:
+        return
+    ids = session.exec(
+        select(Run.id).where(Run.job_id == job_id).order_by(Run.id.desc())
+    ).all()
+    old = ids[_RUN_KEEP:]
+    for rid in old:
+        row = session.get(Run, rid)
+        if row:
+            session.delete(row)
+    if old:
+        session.commit()
 
 
 def account_dir(username: str) -> Path:
@@ -187,6 +230,10 @@ def _finalize(session: Session, account: Account, job: Job, run: Run, *, prune: 
         notify.notify_run(s, account, job, run)
     except Exception:
         pass
+    try:
+        _prune_runs(session, job.id)   # cap run history (+ its logs) every run
+    except Exception:
+        pass
     # After a successful backup, verify integrity + push to remote destinations.
     if prune:
         try:
@@ -229,33 +276,45 @@ def _job_options(job: Job) -> dict:
     }
 
 
-def _clone_selected_starred(out_dir: Path, token: str, full_names: list[str], job_id: int) -> None:
+def _clone_selected_starred(out_dir: Path, token: str, full_names: list[str],
+                            job_id: int) -> tuple[int, int]:
     """Mirror-clone selected starred repos into repositories/<name>/repository.
 
     Matches github-backup's --all-starred layout so the panel lists them as
     starred clones. Incremental: an existing mirror is fetched, not recloned.
-    A single repo's failure never breaks the run, and the tokened URL is never
-    persisted (output is captured and discarded).
+    A single repo's failure never crashes the run, but failures are counted and
+    returned so the caller can flag the backup as incomplete instead of falsely
+    reporting success. The tokened URL is never persisted (output discarded).
+
+    Returns (ok_count, failed_count).
     """
     repos_root = out_dir / "repositories"
     repos_root.mkdir(parents=True, exist_ok=True)
+    ok = failed = 0
     for fn in full_names:
         if engine.is_cancelled(job_id):
-            return
+            break
         name = fn.split("/")[-1]
         dest = repos_root / name / "repository"
         progress.update(job_id, phase="Yıldızlı repolar", message=fn, inc=1)
         url = f"https://{token}@github.com/{fn}.git"
         try:
             if (dest / "HEAD").exists():
-                subprocess.run(["git", "--git-dir", str(dest), "remote", "update", "--prune"],
-                               capture_output=True, timeout=3600)
+                r = subprocess.run(["git", "--git-dir", str(dest), "remote", "update", "--prune"],
+                                   capture_output=True, timeout=3600)
             else:
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                subprocess.run(["git", "clone", "--mirror", url, str(dest)],
-                               capture_output=True, timeout=3600)
-        except Exception:
-            pass
+                r = subprocess.run(["git", "clone", "--mirror", url, str(dest)],
+                                   capture_output=True, timeout=3600)
+            if r.returncode == 0:
+                ok += 1
+            else:
+                failed += 1
+                log.warning("selected-starred clone failed for %s (rc=%s)", fn, r.returncode)
+        except Exception as e:
+            failed += 1
+            log.warning("selected-starred clone errored for %s: %s", fn, type(e).__name__)
+    return ok, failed
 
 
 def _finish_cancelled(session: Session, job: Job, run: Run, job_id: int) -> Run:
@@ -273,6 +332,37 @@ def _finish_cancelled(session: Session, job: Job, run: Run, job_id: int) -> Run:
 
 
 def run_job(session: Session, job_id: int, trigger: str = "manual") -> Run:
+    """Public entry point. Serializes runs of the same job behind a lock so a
+    scheduled tick and a manual "Run now" can never run two engines against the
+    same mirrors at once (which would corrupt them)."""
+    job = session.get(Job, job_id)
+    if job is None:
+        raise ValueError(f"job {job_id} not found")
+    if session.get(Account, job.account_id) is None:
+        raise ValueError(f"account {job.account_id} not found")
+
+    lock = _job_lock(job_id)
+    if not lock.acquire(blocking=False):
+        log.warning("job %s already running; refusing concurrent start", job_id)
+        prev = session.exec(
+            select(Run).where(Run.job_id == job_id).order_by(Run.id.desc())
+        ).first()
+        if prev:
+            return prev
+        skip = Run(job_id=job_id, trigger=trigger, status="skipped",
+                   finished_at=utcnow(),
+                   summary=json.dumps({"note": "already running"}))
+        session.add(skip)
+        session.commit()
+        session.refresh(skip)
+        return skip
+    try:
+        return _run_job_locked(session, job_id, trigger)
+    finally:
+        lock.release()
+
+
+def _run_job_locked(session: Session, job_id: int, trigger: str = "manual") -> Run:
     job = session.get(Job, job_id)
     if job is None:
         raise ValueError(f"job {job_id} not found")
@@ -325,6 +415,26 @@ def run_job(session: Session, job_id: int, trigger: str = "manual") -> Run:
             _finalize(session, account, job, run, prune=False)
             return run
 
+        # Disk-space guard: never start writing a backup we might not finish.
+        free = shutil.disk_usage(config.DATA_DIR).free
+        if free < _MIN_FREE_BYTES:
+            run.status = "error"
+            run.changed = False
+            run.finished_at = utcnow()
+            run.summary = json.dumps({"note": "insufficient disk space",
+                                      "free_bytes": free})
+            run.log = (f"Yetersiz disk alanı: {free // 1024 // 1024} MB boş, "
+                       f"en az {_MIN_FREE_BYTES // 1024 // 1024} MB gerekli. "
+                       f"Yedek başlatılmadı.")
+            job.last_status = "error"
+            job.consecutive_failures = (job.consecutive_failures or 0) + 1
+            session.add_all([run, job])
+            session.commit()
+            session.refresh(run)
+            progress.finish(job_id, "error")
+            _finalize(session, account, job, run, prune=False)
+            return run
+
         # 3: run the engine (streams progress via the callback)
         progress.update(job_id, phase="Repolar", message="başlıyor…")
         if engine.is_cancelled(job_id):
@@ -340,8 +450,9 @@ def run_job(session: Session, job_id: int, trigger: str = "manual") -> Run:
 
         # "Selected starred" mode: clone just the chosen repos ourselves.
         selected = _selected_starred(job)
+        starred_ok = starred_failed = 0
         if selected:
-            _clone_selected_starred(out_dir, token, selected, job_id)
+            starred_ok, starred_failed = _clone_selected_starred(out_dir, token, selected, job_id)
             if engine.is_cancelled(job_id):
                 return _finish_cancelled(session, job, run, job_id)
 
@@ -370,14 +481,28 @@ def run_job(session: Session, job_id: int, trigger: str = "manual") -> Run:
             "engine_exit": code,
             "metadata_files": json_count,
             "social_entries": social_count,
+            "starred_selected_ok": starred_ok,
+            "starred_selected_failed": starred_failed,
         }
 
-        if code == 0:
+        # A backup only counts as a full success when the engine exited cleanly
+        # AND every selected starred repo cloned. On anything less we must NOT
+        # advance the fingerprint, or skip_unchanged would permanently skip the
+        # repos that failed — a silent gap in a backup tool.
+        log_note = ""
+        if code == 0 and starred_failed == 0:
             run.status = "success"
             run.changed = True
-            job.last_fingerprint = json.dumps(new_fp)
+            job.last_fingerprint = json.dumps(new_fp)   # advance only when complete
             job.last_status = "success"
             job.consecutive_failures = 0
+        elif code == 0 and starred_failed > 0:
+            run.status = "partial"                      # most succeeded; some starred failed
+            run.changed = True
+            job.last_status = "partial"
+            job.consecutive_failures = 0
+            log_note = (f"[{starred_failed} yıldızlı repo klonlanamadı, "
+                        f"{starred_ok} tamam — sonraki çalıştırmada tekrar denenecek]\n")
         else:
             run.status = "error"
             job.last_status = "error"
@@ -386,7 +511,7 @@ def run_job(session: Session, job_id: int, trigger: str = "manual") -> Run:
         run.finished_at = utcnow()
         run.summary = json.dumps(summary)
         run.snapshot_path = str(snap_dir)
-        run.log = log[-20000:]  # keep the tail; logs can be long
+        run.log = (log_note + log)[-20000:]  # keep the tail; logs can be long
         session.add_all([run, job])
         session.commit()
         session.refresh(run)

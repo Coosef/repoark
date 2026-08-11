@@ -11,10 +11,24 @@ omitted so nothing extra is downloaded.
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import threading
 from collections.abc import Callable
 from pathlib import Path
+
+
+def _signal_group(proc: "subprocess.Popen", sig: int) -> None:
+    """Signal the whole process group so github-backup's child git processes
+    die too (a bare proc.terminate/kill leaves the git children running and
+    holding repo locks). Falls back to signalling just the process."""
+    try:
+        os.killpg(os.getpgid(proc.pid), sig)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.send_signal(sig)
+        except Exception:
+            pass
 
 
 def build_args(username: str, token: str, output_dir: Path, *,
@@ -83,10 +97,7 @@ def request_cancel(job_id: int) -> bool:
         proc = _PROCS.get(job_id)
     if proc is None:
         return False
-    try:
-        proc.terminate()
-    except Exception:
-        pass
+    _signal_group(proc, signal.SIGTERM)
     return True
 
 
@@ -123,6 +134,9 @@ def run_backup(username: str, token: str, output_dir: Path, *, options: dict,
             text=True,
             bufsize=1,
             env=env,
+            # Own process group so a stop/timeout can kill github-backup AND the
+            # git children it spawns (see _signal_group).
+            start_new_session=True,
         )
     except FileNotFoundError:
         return 127, "github-backup executable not found in PATH"
@@ -135,7 +149,7 @@ def run_backup(username: str, token: str, output_dir: Path, *, options: dict,
 
     def _kill():
         timed_out["v"] = True
-        proc.kill()
+        _signal_group(proc, signal.SIGKILL)
 
     watchdog = threading.Timer(timeout, _kill)
     watchdog.start()

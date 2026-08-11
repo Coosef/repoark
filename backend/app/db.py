@@ -3,18 +3,36 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from sqlalchemy import inspect, text
+from sqlalchemy import event, inspect, text
 from sqlmodel import Session, SQLModel, create_engine
 
 from . import config
 
 # check_same_thread=False: the scheduler runs jobs on background threads that
 # need their own sessions against the same SQLite file.
+# timeout=30: wait (don't instantly raise "database is locked") when another
+# thread holds the write lock — a long backup commits repeatedly while request
+# threads read.
 _engine = create_engine(
     f"sqlite:///{config.DB_PATH}",
     echo=False,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 30},
 )
+
+
+@event.listens_for(_engine, "connect")
+def _sqlite_pragmas(dbapi_conn, _record):
+    """Tune SQLite for concurrent reader/writer access on every connection.
+
+    WAL lets readers proceed while a writer is active (crucial: the panel polls
+    progress every second during a backup that is itself committing), and a
+    busy_timeout turns lock contention into a short wait instead of an error.
+    """
+    cur = dbapi_conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL")
+    cur.execute("PRAGMA busy_timeout=30000")
+    cur.execute("PRAGMA synchronous=NORMAL")
+    cur.close()
 
 
 def _migrate() -> None:
