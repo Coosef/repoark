@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 
 from sqlmodel import Session, select
 
@@ -83,11 +84,28 @@ def test(dest: Destination) -> tuple[bool, str]:
     return code == 0, log[-4000:]
 
 
+def _local_file_count(local_dir: str) -> int:
+    p = Path(local_dir)
+    return sum(1 for x in p.rglob("*") if x.is_file()) if p.is_dir() else 0
+
+
 def sync(dest: Destination, local_dir: str, account_username: str) -> tuple[int, str]:
-    """Incrementally sync an account's backup tree to the destination."""
+    """Incrementally sync an account's backup tree to the destination.
+
+    Two safeguards so a *local* fault can't destroy the offsite copy (rclone
+    sync deletes remote files to match local):
+      - Refuse to sync an empty local tree onto the remote — an empty/corrupt
+        github-backup output must never wipe the remote.
+      - `--backup-dir`: anything rclone would delete or overwrite on the remote
+        is moved to a sibling `__archive__` folder instead of being lost, so the
+        previous state is always recoverable (bounded to one generation)."""
+    if _local_file_count(local_dir) == 0:
+        return 3, "Yerel yedek boş görünüyor — uzak kopya korundu, senkron atlandı."
     remote = _remote(dest, account_username)
+    archive = _remote(dest, "__archive__", account_username)
     code, log = _run(
         ["rclone", "sync", local_dir, remote,
+         "--backup-dir", archive,
          "--transfers", "4", "--checkers", "8",
          "--s3-no-check-bucket", "--stats-one-line", "-v"],
         _env(dest), timeout=7200,

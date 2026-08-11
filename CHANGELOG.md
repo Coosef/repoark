@@ -3,6 +3,15 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.10.0]
+### Changed
+- **Safer remote sync.** A local fault can no longer wipe the offsite copy:
+  RepoArk refuses to sync an empty local tree onto the remote, and uses
+  rclone `--backup-dir` so anything a sync would delete or overwrite on the
+  remote is moved to a sibling `__archive__` folder (previous state always
+  recoverable) instead of being deleted — closing the gap where a corrupted or
+  empty local backup would mirror-delete the good remote copy.
+
 ## [1.9.0]
 ### Added
 - **Stale-backup alert** on the dashboard: a scheduled job that hasn't succeeded
