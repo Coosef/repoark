@@ -3,6 +3,15 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.9.0]
+### Added
+- **Stale-backup alert** on the dashboard: a scheduled job that hasn't succeeded
+  in far longer than its cadence is flagged, so a job that quietly stopped
+  (expired token, full disk, misconfig) doesn't go unnoticed.
+- **Post-sync verify**: after a remote sync, RepoArk runs `rclone check`
+  (size-only, no data transfer) to confirm the remote copy actually matches
+  local, surfacing a silent partial sync in the sync log.
+
 ## [1.8.0]
 ### Added
 - A **Verify backup** button per account (a real "restore drill"): it actually

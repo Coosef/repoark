@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 
 from .. import backup, config, crypto, notify, scheduler
 from ..db import get_session
-from ..models import Account, Destination, Job, Settings, utcnow
+from ..models import Account, Destination, Job, Run, Settings, utcnow
 from ..schemas import SettingsRead, SettingsUpdate
 
 router = APIRouter(prefix="/api", tags=["settings"])
@@ -222,7 +222,36 @@ def alerts(session: Session = Depends(get_session)):
                 "failures": job.consecutive_failures or 1,
                 "last_run_at": job.last_run_at,
             })
-    return {"token": token_alerts, "failing": failing}
+
+    # Stale: a scheduled job that hasn't SUCCEEDED in far longer than its
+    # cadence. Catches jobs that quietly stopped working (expired token, full
+    # disk, misconfig) without necessarily being in an "error" state right now.
+    failing_ids = {f["job_id"] for f in failing}
+    stale = []
+    for job in session.exec(select(Job)).all():
+        if not job.enabled or job.schedule_kind == "manual" or job.id in failing_ids:
+            continue
+        period = job.interval_minutes if job.schedule_kind == "interval" else 1440
+        grace = max(period * 3, 720)   # minutes; at least 12h of slack
+        if (now - job.created_at).total_seconds() / 60 < grace:
+            continue                    # too new to expect a success yet
+        last_ok = session.exec(
+            select(Run).where(Run.job_id == job.id,
+                              Run.status.in_(["success", "partial"]))
+            .order_by(Run.finished_at.desc())
+        ).first()
+        last_at = last_ok.finished_at if last_ok else None
+        mins = ((now - last_at).total_seconds() / 60) if last_at else None
+        if last_at is None or (mins is not None and mins > grace):
+            acc = accounts_by_id.get(job.account_id)
+            stale.append({
+                "job_id": job.id, "job_name": job.name,
+                "username": acc.username if acc else "?",
+                "days": int(mins / 1440) if mins is not None else None,
+                "never": last_at is None,
+                "last_success_at": last_at,
+            })
+    return {"token": token_alerts, "failing": failing, "stale": stale}
 
 
 @router.get("/storage")

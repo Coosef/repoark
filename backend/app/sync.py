@@ -95,6 +95,20 @@ def sync(dest: Destination, local_dir: str, account_username: str) -> tuple[int,
     return code, log[-8000:]
 
 
+def verify(dest: Destination, local_dir: str, account_username: str) -> tuple[bool, str]:
+    """After a sync, confirm the remote actually matches local — every local
+    file present on the remote with the same size. `--size-only` skips hashing
+    so it's metadata-only (no data transfer), and `--one-way` ignores extra
+    remote files. Best-effort: a slow/large tree just makes this take longer."""
+    remote = _remote(dest, account_username)
+    code, log = _run(
+        ["rclone", "check", local_dir, remote,
+         "--one-way", "--size-only", "--stats-one-line"],
+        _env(dest), timeout=1800,
+    )
+    return code == 0, log[-2000:]
+
+
 def sync_account(session: Session, dest: Destination, account: Account) -> None:
     """Run one sync and record the result on the destination row."""
     dest.last_sync_status = "running"
@@ -105,6 +119,14 @@ def sync_account(session: Session, dest: Destination, account: Account) -> None:
         code, log = sync(dest, local, account.username)
     except Exception as e:
         code, log = 1, f"{type(e).__name__}: {e}"
+    if code == 0:
+        # Confirm the remote copy really matches — surfaces a silent partial sync.
+        try:
+            ok, vlog = verify(dest, local, account.username)
+            log += "\n[doğrulama] " + ("✓ uzak kopya eşleşiyor" if ok
+                                        else "⚠ fark bulundu:\n" + vlog)
+        except Exception:
+            pass
     dest.last_sync_status = "success" if code == 0 else "error"
     dest.last_sync_at = utcnow()
     dest.last_sync_log = log

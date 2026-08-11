@@ -170,6 +170,21 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
           </div>
         </div>
       ))}
+      {(alerts.stale || []).map((a) => (
+        <div className="group" key={"stale" + a.job_id} style={{ marginTop: 16 }}>
+          <div className="row-item tap" onClick={() => onGoTab("jobs")}>
+            <div className="isq lg isq-amber">🕒</div>
+            <div className="row-body">
+              <div className="row-title">
+                {a.never ? t("alert.staleNever", { name: a.job_name })
+                         : t("alert.staleDays", { name: a.job_name, days: a.days })}
+              </div>
+              <div className="row-desc">{t("alert.staleSub")}</div>
+            </div>
+            <div className="row-right"><span style={{ color: "var(--link)" }}>{t("alert.viewJob")}</span><span className="chev">›</span></div>
+          </div>
+        </div>
+      ))}
 
       {/* Running banner */}
       {running && (
