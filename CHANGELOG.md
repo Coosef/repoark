@@ -3,6 +3,13 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.6.4]
+### Security
+- Harden the destination connection test (1.6.3): a saved destination's secret
+  is now only ever tested against its own saved endpoint. A request could no
+  longer reuse a stored secret while supplying a different (attacker-chosen)
+  endpoint, which could have exfiltrated the secret. Added a regression test.
+
 ## [1.6.3]
 ### Added
 - A **Test** button in the remote-destination form: check that a destination

@@ -68,15 +68,25 @@ def test_config(payload: DestinationCreate, id: int | None = Query(None),
                 session: Session = Depends(get_session)):
     """Test a destination's connection using the values from the form, without
     saving it — so the user can confirm it works before committing (and without
-    having to run a whole backup). When editing and the secret is left blank,
-    fall back to the already-saved secret via ?id=."""
-    d = Destination(**payload.model_dump(exclude={"secret_key"}))
+    having to run a whole backup).
+
+    Security: a *stored* secret is only ever tested against its own *stored*
+    connection details. We never pair a saved secret with caller-supplied
+    endpoint/bucket values — otherwise a request with ?id= + a blank secret +
+    an attacker-chosen endpoint could make us send the saved secret to that
+    endpoint (credential exfiltration). So: if the form carries a secret, test
+    exactly what was submitted; if it doesn't and an id is given, test the saved
+    destination as-is; otherwise test the submitted config with no secret.
+    """
     if payload.secret_key:
+        d = Destination(**payload.model_dump(exclude={"secret_key"}))
         d.secret_key_enc = crypto.encrypt(payload.secret_key)
-    elif id:
-        existing = session.get(Destination, id)
-        if existing:
-            d.secret_key_enc = existing.secret_key_enc
+    elif id is not None:
+        d = session.get(Destination, id)
+        if not d:
+            raise HTTPException(404, "Destination not found")
+    else:
+        d = Destination(**payload.model_dump(exclude={"secret_key"}))
     ok, log = sync.test(d)
     return {"ok": ok, "log": log}
 
