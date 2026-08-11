@@ -91,8 +91,9 @@ export function LineChart({ points, color = "#2f81f7", format = (v) => v }) {
 
 // Donut chart for status distribution: segments [{label, value, color}].
 export function Donut({ segments, size = 120 }) {
+  const { t } = useLang();
   const total = segments.reduce((s, x) => s + x.value, 0);
-  if (total === 0) return <Empty>Veri yok</Empty>;
+  if (total === 0) return <Empty>{t("common.noData")}</Empty>;
   const r = size / 2 - 10;
   const c = size / 2;
   const circ = 2 * Math.PI * r;
@@ -123,7 +124,7 @@ export function Donut({ segments, size = 120 }) {
           return el;
         })}
         <text x={c} y={c - 2} textAnchor="middle" className="donut-total">{total}</text>
-        <text x={c} y={c + 16} textAnchor="middle" className="donut-sub">çalışma</text>
+        <text x={c} y={c + 16} textAnchor="middle" className="donut-sub">{t("common.runs")}</text>
       </svg>
       <div className="legend">
         {segments.map((s, i) => (

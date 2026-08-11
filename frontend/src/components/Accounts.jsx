@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, urls } from "../api.js";
 import { datetime } from "../lib/format.js";
 import { useLang } from "../i18n.jsx";
+import { useDialog } from "./Dialog.jsx";
 
 function ConnectForm({ onConnected, onMsg }) {
   const { t } = useLang();
@@ -54,11 +55,17 @@ function ConnectForm({ onConnected, onMsg }) {
 
 export default function Accounts({ accounts, jobs, onRefresh, onAddJob, onMsg }) {
   const { t } = useLang();
+  const { confirm, promptSecret } = useDialog();
   async function updateToken(acc) {
-    const token = prompt(t("acc.newToken", { user: acc.username }));
+    const token = await promptSecret({
+      title: t("acc.updateToken"),
+      message: t("acc.newToken", { user: acc.username }),
+      placeholder: t("acc.token"),
+      confirmLabel: t("common.save"),
+    });
     if (!token) return;
     try {
-      await api.updateToken(acc.id, token.trim());
+      await api.updateToken(acc.id, token);
       onMsg(t("acc.tokenUpdated", { user: acc.username }));
       onRefresh();
     } catch (e) {
@@ -67,7 +74,7 @@ export default function Accounts({ accounts, jobs, onRefresh, onAddJob, onMsg })
   }
 
   async function remove(acc) {
-    if (!confirm(t("acc.removeConfirm", { user: acc.username }))) return;
+    if (!(await confirm({ message: t("acc.removeConfirm", { user: acc.username }) }))) return;
     try {
       await api.deleteAccount(acc.id);
       onRefresh();

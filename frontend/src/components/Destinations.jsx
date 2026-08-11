@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { relative } from "../lib/format.js";
 import { Badge, Empty } from "./ui.jsx";
 import { useLang } from "../i18n.jsx";
+import { useDialog } from "./Dialog.jsx";
 
 const empty = {
   name: "Hedef", type: "s3", enabled: true, endpoint: "", region: "", bucket: "",
@@ -95,6 +96,7 @@ function DestForm({ initial, onSaved, onCancel }) {
 
 export default function Destinations({ accounts, onMsg }) {
   const { t } = useLang();
+  const { confirm } = useDialog();
   const [dests, setDests] = useState([]);
   const [editing, setEditing] = useState(null);
   const [acc, setAcc] = useState(null);
@@ -127,7 +129,8 @@ export default function Destinations({ accounts, onMsg }) {
   }
 
   async function remove(d) {
-    if (!confirm(`${d.name}?`)) return;
+    if (!(await confirm({ message: t("dest.deleteConfirm", { name: d.name }),
+                          confirmLabel: t("common.delete") }))) return;
     await api.deleteDestination(d.id);
     load();
   }

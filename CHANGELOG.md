@@ -3,6 +3,18 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.6.0]
+### Changed
+- Destructive actions (delete a repo backup, account, job, or destination) and
+  the "update token" prompt now use a styled in-app dialog instead of the raw
+  browser confirm()/prompt() — clearer copy, a red confirm button, keyboard
+  focus trap + Escape, and a masked field for the token.
+### Fixed
+- A couple of hard-coded Turkish strings (empty states, the chart labels) now
+  respect the selected language, and Arabic renders right-to-left.
+- Wide tables and README content scroll on small screens instead of overflowing;
+  keyboard focus is now visible on buttons and inputs.
+
 ## [1.5.0]
 ### Added
 - First automated test suite (`backend/tests`) and a CI gate: the image is no

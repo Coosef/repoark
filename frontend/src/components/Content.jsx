@@ -7,6 +7,7 @@ import SnapshotDetail from "./SnapshotDetail.jsx";
 import GistBrowser from "./GistBrowser.jsx";
 import Search from "./Search.jsx";
 import { useLang } from "../i18n.jsx";
+import { useDialog } from "./Dialog.jsx";
 
 const TABS = [
   ["repos", "Repolar"],
@@ -22,6 +23,7 @@ const stars = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace
 
 export default function Content({ accountId, onMsg }) {
   const { t } = useLang();
+  const { confirm } = useDialog();
   const [tab, setTab] = useState("repos");
   // loaded holds {tab, data} so we never render one tab's markup against
   // another tab's data during the brief window before a fetch resolves.
@@ -57,7 +59,7 @@ export default function Content({ accountId, onMsg }) {
   }, [tab, accountId, bump]);
 
   async function pruneOne(name, sizeBytes) {
-    if (!confirm(t("storage.delConfirm", { name, size: bytes(sizeBytes) }))) return;
+    if (!(await confirm({ message: t("storage.delConfirm", { name, size: bytes(sizeBytes) }) }))) return;
     try {
       const r = await api.pruneDir(accountId, name);
       onMsg && onMsg(t("storage.freed", { size: bytes(r.freed_bytes) }));
@@ -72,7 +74,7 @@ export default function Content({ accountId, onMsg }) {
     const msg = items.length === 1
       ? t("content.delConfirm", { name: items[0].full_name || items[0].name })
       : t("content.delBulk", { n: items.length });
-    if (!confirm(msg)) return;
+    if (!(await confirm({ message: msg, confirmLabel: t("common.delete") }))) return;
     // Own/selected clones live in repositories/<name>; "download all" starred
     // clones live in starred/<owner>/<repo> — route each to the right list.
     const names = items.filter((r) => r.src !== "starred").map((r) => r.name);
@@ -88,7 +90,7 @@ export default function Content({ accountId, onMsg }) {
     }
   }
 
-  if (!accountId) return <Empty>Önce bir hesap bağla.</Empty>;
+  if (!accountId) return <Empty>{t("dash.connectFirst")}</Empty>;
   if (repo) return <RepoBrowser accountId={accountId} repo={repo.name} owner={repo.owner} src={repo.src} fullName={repo.full_name} initialPath={repo.path} onClose={() => setRepo(null)} />;
   if (gist) return <GistBrowser accountId={accountId} gid={gist.id} description={gist.description} onClose={() => setGist(null)} />;
   if (snapshot) return <SnapshotDetail accountId={accountId} name={snapshot} onClose={() => setSnapshot(null)} />;

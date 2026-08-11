@@ -4,6 +4,7 @@ import { relative, bytes } from "../lib/format.js";
 import { Badge, Empty, Switch } from "./ui.jsx";
 import LiveProgress from "./Progress.jsx";
 import { useLang } from "../i18n.jsx";
+import { useDialog } from "./Dialog.jsx";
 
 export const SCOPES = [
   ["repos", "Repolar (kod)"],
@@ -336,6 +337,7 @@ function JobForm({ accounts, initial, onSaved, onCancel }) {
 
 export default function Jobs({ jobs, accounts, editing, setEditing, onRefresh, onMsg, onShowHistory }) {
   const { t, lang } = useLang();
+  const { confirm } = useDialog();
   async function run(job) {
     try {
       await api.runJob(job.id);
@@ -357,7 +359,8 @@ export default function Jobs({ jobs, accounts, editing, setEditing, onRefresh, o
   }
 
   async function remove(job) {
-    if (!confirm(t("jobs.deleteConfirm", { name: job.name }))) return;
+    if (!(await confirm({ message: t("jobs.deleteConfirm", { name: job.name }),
+                          confirmLabel: t("common.delete") }))) return;
     await api.deleteJob(job.id);
     onRefresh();
   }

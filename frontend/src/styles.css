@@ -582,4 +582,42 @@ a.frow:hover { text-decoration: none; }
   .hero { flex-direction: column; text-align: center; }
   .hero-health { justify-content: center; flex-wrap: wrap; }
   .cover { justify-content: center; }
+  /* Keep wide tables (files, commits, README tables) scrollable, not clipped */
+  table.data, .markdown table { display: block; overflow-x: auto; max-width: 100%; }
+  .markdown pre { overflow-x: auto; max-width: 100%; }
+}
+
+/* --- In-app modal dialog (replaces native confirm/prompt) --- */
+.dlg-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.42);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; backdrop-filter: blur(2px);
+}
+.dlg {
+  background: var(--card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: var(--shadow); padding: 22px;
+  width: 100%; max-width: 400px;
+}
+.dlg-title { margin: 0 0 8px; font-size: 17px; font-weight: 700; }
+.dlg-msg { margin: 0 0 16px; color: var(--muted2); line-height: 1.45; }
+.dlg-input {
+  width: 100%; box-sizing: border-box; margin-bottom: 16px;
+  padding: 10px 12px; border: 1px solid var(--border-strong);
+  border-radius: 10px; background: var(--bg); color: var(--text); font-size: 14px;
+}
+.dlg-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.dlg-cancel, .dlg-confirm {
+  padding: 9px 18px; border-radius: 10px; font-weight: 600; font-size: 14px; cursor: pointer;
+}
+.dlg-cancel { background: var(--fill); color: var(--text); border: none; }
+.dlg-confirm { background: var(--accent); color: #fff; border: none; }
+.dlg-confirm.danger { background: var(--red); }
+.dlg-confirm:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Visible keyboard focus for buttons and clickable controls */
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible,
+.switch:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
 }

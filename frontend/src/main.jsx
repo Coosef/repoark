@@ -2,15 +2,18 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import LoginGate from "./components/LoginGate.jsx";
+import { DialogProvider } from "./components/Dialog.jsx";
 import { LangProvider } from "./i18n.jsx";
 import "./styles.css";
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <LangProvider>
-      <LoginGate>
-        <App />
-      </LoginGate>
+      <DialogProvider>
+        <LoginGate>
+          <App />
+        </LoginGate>
+      </DialogProvider>
     </LangProvider>
   </React.StrictMode>
 );
