@@ -3,6 +3,15 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.12.0]
+### Security
+- **The container no longer runs as root.** An unprivileged `app` user runs the
+  app (and every git/rclone subprocess), so an RCE in a dependency can't be root.
+  A tiny entrypoint starts as root only long enough to make the data volume
+  writable by that user, then drops privileges via gosu. Note: the first start
+  after this upgrade chowns the data volume to the app user, which can take a
+  few minutes on a large backup set — don't restart during it.
+
 ## [1.11.0]
 ### Added
 - **Auto-cleanup of un-starred repos.** When a job downloads *all* starred

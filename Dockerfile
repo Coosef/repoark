@@ -22,9 +22,11 @@ ENV PYTHONUNBUFFERED=1 \
 # rclone: used to sync backups to S3-compatible remote destinations.
 # tini: a real init as PID 1 so SIGTERM on stop/update is forwarded and the
 #       git children spawned by a backup are reaped instead of orphaned.
+# gosu: drop from root to the unprivileged app user at startup (see entrypoint).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git git-lfs ca-certificates rclone tini \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends git git-lfs ca-certificates rclone tini gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --create-home --shell /usr/sbin/nologin app
 
 WORKDIR /app
 COPY backend/requirements.txt ./
@@ -32,15 +34,19 @@ RUN pip install -r requirements.txt
 
 COPY backend/ ./
 COPY --from=frontend /fe/dist ./static
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8000
 VOLUME ["/data"]
 
 # Fail the container health when the API stops answering, so CasaOS/Docker can
 # restart a wedged process (restart: unless-stopped only catches a full exit).
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+# Generous start-period: a first run after upgrading may spend a while chowning
+# the data volume to the app user before the API comes up (see entrypoint).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=300s --retries=5 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status==200 else 1)"
 
-# tini as PID 1 (see apt install above) for correct signal handling / reaping.
-ENTRYPOINT ["tini", "--"]
+# The entrypoint drops root -> app (via gosu) and runs tini as PID 1.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
