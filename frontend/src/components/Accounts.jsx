@@ -12,6 +12,8 @@ function ConnectForm({ onConnected, onMsg }) {
   const [org, setOrg] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testRes, setTestRes] = useState(null);
 
   async function submit(e) {
     e.preventDefault();
@@ -19,13 +21,26 @@ function ConnectForm({ onConnected, onMsg }) {
     setErr("");
     try {
       const acc = await api.connectAccount(label, token, isOrg ? org.trim() : null);
-      setLabel(""); setToken(""); setOrg(""); setIsOrg(false);
+      setLabel(""); setToken(""); setOrg(""); setIsOrg(false); setTestRes(null);
       onMsg(`@${acc.username} ✓`);
       onConnected();
     } catch (e) {
       setErr(e.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function testToken() {
+    setTesting(true);
+    setTestRes(null);
+    setErr("");
+    try {
+      setTestRes(await api.testToken(token, isOrg ? org.trim() : null));
+    } catch (e) {
+      setTestRes({ ok: false, error: e.message });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -48,7 +63,24 @@ function ConnectForm({ onConnected, onMsg }) {
         </>
       )}
       {err && <div className="error">{err}</div>}
-      <button disabled={busy || !token || (isOrg && !org.trim())}>{busy ? t("acc.connecting") : t("acc.connectBtn")}</button>
+      {testRes && (testRes.ok ? (
+        <div className="test-ok">
+          ✓ {t("acc.tokenOk")} — {testRes.is_org ? "🏢 " : "@"}{testRes.login}
+          <div className="muted" style={{ fontWeight: 400, marginTop: 2 }}>
+            {(testRes.scopes && testRes.scopes.length ? testRes.scopes.join(", ") + " · " : "")}
+            {testRes.expires_at ? testRes.expires_at.slice(0, 10) : t("acc.tokenNoExpiry")}
+          </div>
+        </div>
+      ) : (
+        <div className="error">✗ {testRes.error}</div>
+      ))}
+      <div className="row">
+        <button disabled={busy || !token || (isOrg && !org.trim())}>{busy ? t("acc.connecting") : t("acc.connectBtn")}</button>
+        <button type="button" className="secondary" onClick={testToken}
+                disabled={testing || !token || (isOrg && !org.trim())}>
+          {testing ? t("dest.testing") : t("acc.testToken")}
+        </button>
+      </div>
     </form>
   );
 }

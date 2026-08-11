@@ -3,6 +3,13 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.7.0]
+### Added
+- A **Test token** button on the connect-account form: check a GitHub token
+  before saving it and see the resolved login, its scopes, expiry, and remaining
+  API rate — so a bad or expired token is caught up front instead of by a failed
+  backup.
+
 ## [1.6.4]
 ### Security
 - Harden the destination connection test (1.6.3): a saved destination's secret

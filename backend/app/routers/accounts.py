@@ -18,6 +18,13 @@ def list_accounts(session: Session = Depends(get_session)):
     return session.exec(select(Account)).all()
 
 
+@router.post("/test-token")
+def test_token(payload: AccountCreate):
+    """Check a GitHub token without saving it — used by the connect form's
+    'Test token' button so a bad or expired token is caught up front."""
+    return github.test_token(payload.token, payload.org or "")
+
+
 @router.post("", response_model=AccountRead, status_code=201)
 def connect_account(payload: AccountCreate, session: Session = Depends(get_session)):
     token = payload.token.strip()

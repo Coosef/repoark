@@ -52,6 +52,8 @@ export const api = {
   // accounts
   listAccounts: () => req("GET", "/api/accounts"),
   connectAccount: (label, token, org) => req("POST", "/api/accounts", { label, token, org: org || null }),
+  // Check a GitHub token before connecting it (login, scopes, expiry).
+  testToken: (token, org) => req("POST", "/api/accounts/test-token", { token, org: org || null }),
   updateToken: (id, token) => req("PUT", `/api/accounts/${id}`, { token }),
   deleteAccount: (id) => req("DELETE", `/api/accounts/${id}`),
   deleted: (id) => req("GET", `/api/accounts/${id}/deleted`),

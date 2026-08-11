@@ -65,6 +65,47 @@ def _parse_expiry(val: str) -> Optional[datetime]:
     return None
 
 
+def test_token(token: str, org: str = "") -> dict[str, Any]:
+    """Validate a token WITHOUT saving it, and surface what it can do so the
+    user can confirm before connecting: the resolved login, its scopes (classic
+    PATs), when it expires, and the remaining API rate limit."""
+    token = (token or "").strip()
+    org = (org or "").strip()
+    if not token:
+        return {"ok": False, "error": "Token boş"}
+    try:
+        with _client(token) as c:
+            r = c.get("/user")
+            r.raise_for_status()
+            login = r.json().get("login")
+            scopes = [s.strip() for s in r.headers.get("x-oauth-scopes", "").split(",") if s.strip()]
+            expires = _parse_expiry(r.headers.get("github-authentication-token-expiration", ""))
+            try:
+                rate_remaining = int(r.headers.get("x-ratelimit-remaining", ""))
+            except ValueError:
+                rate_remaining = None
+            is_org = False
+            if org:
+                ro = c.get(f"/orgs/{org}")
+                ro.raise_for_status()
+                login = ro.json().get("login", org)
+                is_org = True
+        return {
+            "ok": True, "login": login, "is_org": is_org, "scopes": scopes,
+            "expires_at": expires.isoformat() if expires else None,
+            "rate_remaining": rate_remaining,
+        }
+    except httpx.HTTPStatusError as e:
+        code = e.response.status_code
+        if code == 401:
+            return {"ok": False, "error": "Token geçersiz veya süresi dolmuş"}
+        if code == 404 and org:
+            return {"ok": False, "error": "Organizasyon bulunamadı ya da token erişemiyor"}
+        return {"ok": False, "error": f"GitHub hatası: {code}"}
+    except httpx.HTTPError as e:
+        return {"ok": False, "error": f"GitHub'a ulaşılamadı: {e}"}
+
+
 def token_expiry(token: str) -> Optional[datetime]:
     """Best-effort: return when the token expires (naive-UTC), or None.
 
