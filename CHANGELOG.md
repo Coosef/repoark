@@ -3,6 +3,14 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.13.0]
+### Security
+- **Encrypted config export.** The setup export (which contains every token and
+  password) can now be encrypted with a passphrase — decrypted on import with
+  the same passphrase — so the exported file isn't a plaintext secret dump at
+  rest. Export is also a POST now (not a plain link), so it can't be triggered
+  by navigation.
+
 ## [1.12.0]
 ### Security
 - **The container no longer runs as root.** An unprivileged `app` user runs the

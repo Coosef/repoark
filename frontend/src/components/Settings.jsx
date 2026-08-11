@@ -4,6 +4,7 @@ import { bytes } from "../lib/format.js";
 import { Empty, Switch, ISquare } from "./ui.jsx";
 import Destinations from "./Destinations.jsx";
 import Accounts from "./Accounts.jsx";
+import { useDialog } from "./Dialog.jsx";
 import { useLang, LANGS } from "../i18n.jsx";
 
 function PanelPassword({ onMsg }) {
@@ -68,8 +69,28 @@ function PanelPassword({ onMsg }) {
 
 function ConfigBackup({ onMsg }) {
   const { t } = useLang();
+  const { promptSecret } = useDialog();
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [pass, setPass] = useState("");
   const fileRef = useRef(null);
+
+  async function doExport() {
+    setExporting(true);
+    try {
+      const data = await api.exportConfig(pass);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "repoark-config.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setPass("");
+    } catch (err) { onMsg(t("toast.error", { msg: err.message })); } finally { setExporting(false); }
+  }
 
   async function onFile(e) {
     const file = e.target.files && e.target.files[0];
@@ -78,6 +99,11 @@ function ConfigBackup({ onMsg }) {
     setBusy(true);
     try {
       const data = JSON.parse(await file.text());
+      if (data.enc === "repoark-encrypted-v1") {
+        const p = await promptSecret({ title: t("cfg.import"), message: t("cfg.importPass"), confirmLabel: t("cfg.upload") });
+        if (!p) { setBusy(false); return; }
+        data._passphrase = p;
+      }
       const r = await api.importConfig(data);
       onMsg(t("cfg.imported", { a: r.accounts, j: r.jobs, d: r.destinations }));
     } catch (err) { onMsg(t("toast.error", { msg: err.message })); } finally { setBusy(false); }
@@ -90,7 +116,13 @@ function ConfigBackup({ onMsg }) {
         <div className="row-item">
           <ISquare color="teal">💾</ISquare>
           <div className="row-body"><div className="row-title">{t("cfg.export")}</div><div className="row-desc">{t("cfg.exportDesc")}</div></div>
-          <div className="row-right"><a className="btn-link" href={urls.configExport()} download>{t("cfg.download")}</a></div>
+        </div>
+        <div className="row-item" style={{ gap: 8 }}>
+          <input type="password" placeholder={t("cfg.passphrase")} value={pass}
+                 onChange={(e) => setPass(e.target.value)} style={{ flex: 1 }} autoComplete="new-password" />
+          <button className="secondary" disabled={exporting} onClick={doExport}>
+            {exporting ? t("common.loading") : t("cfg.download")}
+          </button>
         </div>
         <div className="row-item">
           <ISquare color="purple">⬆️</ISquare>

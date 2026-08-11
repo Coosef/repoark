@@ -1,6 +1,7 @@
 """Settings (notifications + retention) and storage management endpoints."""
 from __future__ import annotations
 
+import json
 import shutil
 from datetime import datetime
 
@@ -73,22 +74,30 @@ def test_notification(session: Session = Depends(get_session)):
     return {"ok": not errors, "errors": errors}
 
 
-@router.get("/config/export")
-def export_config(session: Session = Depends(get_session)):
+@router.post("/config/export")
+def export_config(body: dict | None = None, session: Session = Depends(get_session)):
     """Download the whole panel setup (accounts, jobs, targets, settings).
 
-    Secrets (tokens, passwords) are DECRYPTED into the file so it can be
-    restored on a fresh container (e.g. after moving to CasaOS). The file is
-    sensitive — the panel warns the user to keep it safe.
+    Secrets (tokens, passwords) are decrypted into the file so it can be restored
+    on a fresh container (e.g. after moving to CasaOS). Pass a `passphrase` to
+    encrypt the file at rest (recommended) — it's decrypted on import with the
+    same passphrase; without one the file is plain JSON.
 
-    Because this dumps every credential in clear text, it is refused unless a
-    panel password is set: when the panel is open (no password) the middleware
-    can't authenticate the caller, so an open panel must not expose this at all.
+    POST (not GET) so a passphrase can be sent in the body and the secret dump
+    can't be triggered by a plain link. Refused unless a panel password is set:
+    when the panel is open the middleware can't authenticate the caller.
     """
     if not notify.get_settings(session).panel_password_hash:
         raise HTTPException(
             403, "Dışa aktarma tüm sırları (token/şifre) içerir; önce "
                  "Ayarlar'dan bir panel şifresi belirleyin.")
+    def _dec(enc):
+        # One corrupt/unreadable secret must not 500 the whole export.
+        try:
+            return crypto.decrypt(enc) if enc else ""
+        except Exception:
+            return ""
+
     accounts = session.exec(select(Account)).all()
     jobs = session.exec(select(Job)).all()
     dests = session.exec(select(Destination)).all()
@@ -98,7 +107,7 @@ def export_config(session: Session = Depends(get_session)):
         "app": "RepoArk", "version": 1,
         "accounts": [
             {"label": a.label, "username": a.username, "is_org": a.is_org,
-             "token": crypto.decrypt(a.token_enc) if a.token_enc else ""}
+             "token": _dec(a.token_enc)}
             for a in accounts
         ],
         "jobs": [
@@ -108,24 +117,39 @@ def export_config(session: Session = Depends(get_session)):
         ],
         "destinations": [
             {**{k: getattr(d, k) for k in _DEST_FIELDS},
-             "secret_key": crypto.decrypt(d.secret_key_enc) if d.secret_key_enc else ""}
+             "secret_key": _dec(d.secret_key_enc)}
             for d in dests
         ],
         "settings": {
             **{k: getattr(s, k) for k in _SETTINGS_FIELDS},
-            "smtp_pass": crypto.decrypt(s.smtp_pass_enc) if s.smtp_pass_enc else "",
-            "telegram_token": crypto.decrypt(s.telegram_token_enc) if s.telegram_token_enc else "",
+            "smtp_pass": _dec(s.smtp_pass_enc),
+            "telegram_token": _dec(s.telegram_token_enc),
             "panel_password_hash": s.panel_password_hash,
         },
     }
-    return JSONResponse(data, headers={
+    passphrase = (body or {}).get("passphrase") or ""
+    if passphrase:
+        enc = crypto.encrypt_with_password(json.dumps(data), passphrase)
+        out = {"app": "RepoArk", "enc": "repoark-encrypted-v1", **enc}
+    else:
+        out = data
+    return JSONResponse(out, headers={
         "Content-Disposition": 'attachment; filename="repoark-config.json"'})
 
 
 @router.post("/config/import")
 def import_config(payload: dict, session: Session = Depends(get_session)):
     """Restore a setup exported by /config/export. Adds what's missing; never
-    deletes. Secrets are re-encrypted with this container's key."""
+    deletes. Secrets are re-encrypted with this container's key. An encrypted
+    export is decrypted first with the passphrase the frontend supplies."""
+    if payload.get("enc") == "repoark-encrypted-v1":
+        try:
+            decoded = crypto.decrypt_with_password(
+                payload.get("salt", ""), payload.get("data", ""),
+                payload.get("_passphrase", ""))
+            payload = json.loads(decoded)
+        except Exception:
+            raise HTTPException(400, "Parola yanlış ya da dosya bozuk")
     result = {"accounts": 0, "jobs": 0, "destinations": 0, "settings": False}
 
     accounts = {a.username: a for a in session.exec(select(Account)).all()}

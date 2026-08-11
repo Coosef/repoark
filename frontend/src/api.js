@@ -46,6 +46,8 @@ export const api = {
   alerts: () => req("GET", "/api/alerts"),
   changes: (id) => req("GET", `/api/accounts/${id}/changes`),
   importConfig: (data) => req("POST", "/api/config/import", data),
+  // Download the setup as JSON; a passphrase encrypts the file at rest.
+  exportConfig: (passphrase) => req("POST", "/api/config/export", { passphrase: passphrase || "" }),
   restoreRepo: (id, repo, newName, priv) =>
     req("POST", `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/restore`, { new_name: newName, private: priv }),
 
@@ -149,5 +151,4 @@ export const urls = {
   accountDownload: (id) => `/api/accounts/${id}/download`,
   repoBundle: (id, repo, owner = "", src = "") =>
     `/api/accounts/${id}/repos/${encodeURIComponent(repo)}/bundle${_sq(owner, src)}`,
-  configExport: () => `/api/config/export`,
 };

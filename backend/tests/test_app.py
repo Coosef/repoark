@@ -28,7 +28,7 @@ def test_security_headers_present():
 def test_config_export_refused_without_password():
     # An open panel (no password) must never expose the secret-dumping export.
     with TestClient(app) as client:
-        r = client.get("/api/config/export")
+        r = client.post("/api/config/export", json={})
         assert r.status_code == 403
 
 
