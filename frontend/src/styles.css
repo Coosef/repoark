@@ -258,6 +258,7 @@ tr.clickable:hover td { background: var(--hover); }
 .muted { color: var(--muted); font-size: 13px; }
 .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .error { color: var(--red); font-size: 13px; margin-top: 8px; }
+.test-ok { color: var(--greenTx); font-size: 13px; margin-top: 8px; font-weight: 600; }
 .empty { text-align: center; color: var(--muted); padding: 44px 20px; }
 
 /* ---------- Charts ---------- */

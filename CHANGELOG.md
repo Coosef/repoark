@@ -3,6 +3,12 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.6.3]
+### Added
+- A **Test** button in the remote-destination form: check that a destination
+  actually connects right there while adding/editing it, without saving or
+  running a whole backup. Shows a clear success/failure result inline.
+
 ## [1.6.2]
 ### Changed
 - Account management (connect a GitHub account, update its token, remove it) now

@@ -15,7 +15,9 @@ function DestForm({ initial, onSaved, onCancel }) {
   const [d, setD] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const set = (k, v) => setD((x) => ({ ...x, [k]: v }));
+  const [testing, setTesting] = useState(false);
+  const [testRes, setTestRes] = useState(null);
+  const set = (k, v) => { setD((x) => ({ ...x, [k]: v })); setTestRes(null); };
 
   async function submit(e) {
     e.preventDefault();
@@ -29,6 +31,19 @@ function DestForm({ initial, onSaved, onCancel }) {
       setErr(e.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function testConn() {
+    setTesting(true);
+    setTestRes(null);
+    setErr("");
+    try {
+      setTestRes(await api.testConfig(d, d.id));
+    } catch (e) {
+      setTestRes({ ok: false, log: e.message });
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -86,8 +101,18 @@ function DestForm({ initial, onSaved, onCancel }) {
 
       <label className="chk"><input type="checkbox" checked={d.enabled} onChange={(e) => set("enabled", e.target.checked)} /> {t("dest.enabledAuto")}</label>
       {err && <div className="error">{err}</div>}
+      {testRes && (
+        <div className={testRes.ok ? "test-ok" : "error"}>
+          {testRes.ok ? `✓ ${t("dest.testOk")}` : `✗ ${t("dest.testFail")}`}
+          {!testRes.ok && testRes.log
+            ? ` — ${(testRes.log.split("\n").filter(Boolean).pop() || "").slice(0, 200)}`
+            : ""}
+        </div>
+      )}
       <div className="row">
         <button disabled={busy}>{busy ? t("form.saving") : t("common.save")}</button>
+        <button type="button" className="secondary" onClick={testConn}
+                disabled={testing || busy}>{testing ? t("dest.testing") : t("dest.test")}</button>
         <button type="button" className="secondary" onClick={onCancel}>{t("common.cancel")}</button>
       </div>
     </form>

@@ -126,6 +126,8 @@ export const api = {
   updateDestination: (id, d) => req("PUT", `/api/destinations/${id}`, d),
   deleteDestination: (id) => req("DELETE", `/api/destinations/${id}`),
   testDestination: (id) => req("POST", `/api/destinations/${id}/test`),
+  // Test a destination's connection from the form values, before saving it.
+  testConfig: (d, id) => req("POST", `/api/destinations/test-config${id ? `?id=${id}` : ""}`, d),
   syncDestination: (id, accountId) => req("POST", `/api/destinations/${id}/sync?account_id=${accountId}`),
 };
 

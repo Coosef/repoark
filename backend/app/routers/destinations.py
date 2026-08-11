@@ -63,6 +63,24 @@ def delete(dest_id: int, session: Session = Depends(get_session)):
     session.commit()
 
 
+@router.post("/test-config")
+def test_config(payload: DestinationCreate, id: int | None = Query(None),
+                session: Session = Depends(get_session)):
+    """Test a destination's connection using the values from the form, without
+    saving it — so the user can confirm it works before committing (and without
+    having to run a whole backup). When editing and the secret is left blank,
+    fall back to the already-saved secret via ?id=."""
+    d = Destination(**payload.model_dump(exclude={"secret_key"}))
+    if payload.secret_key:
+        d.secret_key_enc = crypto.encrypt(payload.secret_key)
+    elif id:
+        existing = session.get(Destination, id)
+        if existing:
+            d.secret_key_enc = existing.secret_key_enc
+    ok, log = sync.test(d)
+    return {"ok": ok, "log": log}
+
+
 @router.post("/{dest_id}/test")
 def test(dest_id: int, session: Session = Depends(get_session)):
     d = session.get(Destination, dest_id)
