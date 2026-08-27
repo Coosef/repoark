@@ -37,6 +37,7 @@ export default function App() {
   const [activeAccount, setActiveAccount] = useState(null);
   const [editing, setEditing] = useState(null);
   const [historyFocus, setHistoryFocus] = useState(null);
+  const [contentFocus, setContentFocus] = useState(null); // deep-link into Content (repo/file or gist)
   const [msg, setMsg] = useState("");
   const [deletedCount, setDeletedCount] = useState(0);
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -118,6 +119,14 @@ export default function App() {
 
   function addJob(accountId) { setEditing(emptyJob(accountId)); setTab("jobs"); }
   function showHistory(job) { setHistoryFocus(job.id); setTab("history"); }
+  // Jump from a secret-scan finding straight to the file in the backup browser.
+  function openFinding(f) {
+    const b = f.browse || {};
+    if (b.gist) setContentFocus({ gist: b.gist });
+    else setContentFocus({ name: b.name || f.repo, owner: b.owner || "", src: b.src || "",
+                           full_name: f.full_name, path: f.file });
+    setTab("content");
+  }
 
   return (
     <div className="app" data-theme={theme}>
@@ -222,12 +231,12 @@ export default function App() {
             </div>
           </div>
 
-          {tab === "dashboard" && <Dashboard accountId={activeAccount} accounts={accounts} jobs={jobs} onRefresh={refresh} onMsg={setMsg} onGoTab={setTab} />}
+          {tab === "dashboard" && <Dashboard accountId={activeAccount} accounts={accounts} jobs={jobs} onRefresh={refresh} onMsg={setMsg} onGoTab={setTab} onOpenFinding={openFinding} />}
           {tab === "accounts" && <Accounts accounts={accounts} jobs={jobs} onRefresh={refresh} onAddJob={addJob} onMsg={setMsg} />}
           {tab === "jobs" && <Jobs jobs={jobs} accounts={accounts} editing={editing} setEditing={setEditing} onRefresh={refresh} onMsg={setMsg} onShowHistory={showHistory} />}
           {tab === "timeline" && <Timeline accountId={activeAccount} />}
           {tab === "kasa" && <Kasa accountId={activeAccount} onMsg={setMsg} />}
-          {tab === "content" && <Content accountId={activeAccount} onMsg={setMsg} />}
+          {tab === "content" && <Content accountId={activeAccount} onMsg={setMsg} focus={contentFocus} onFocusDone={() => setContentFocus(null)} />}
           {tab === "history" && <History jobs={jobs} focusJobId={historyFocus} />}
           {tab === "settings" && <Settings accounts={accounts} jobs={jobs} onRefresh={refresh} onAddJob={addJob} onMsg={setMsg} theme={theme} setTheme={setTheme} />}
         </div>

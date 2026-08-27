@@ -4,6 +4,7 @@ import { bytes, relative, datetime } from "../lib/format.js";
 import { LineChart, Empty } from "./ui.jsx";
 import LiveProgress from "./Progress.jsx";
 import BackupCalendar from "./BackupCalendar.jsx";
+import FindingModal from "./SecretFinding.jsx";
 import { useLang } from "../i18n.jsx";
 
 const RING_C = 2 * Math.PI * 63; // circumference for r=63
@@ -11,7 +12,7 @@ const RING_C = 2 * Math.PI * 63; // circumference for r=63
 // Secret-scan findings grouped per repo: a repo header, then each hit as
 // "file:line · masked preview" with a kind chip — so it's obvious exactly
 // which repo and where.
-function ScanFindings({ findings, t }) {
+function ScanFindings({ findings, t, onSelect }) {
   const groups = [];
   const idx = {};
   for (const f of findings) {
@@ -28,9 +29,11 @@ function ScanFindings({ findings, t }) {
           </div>
           <div style={{ display: "grid", gap: 4, paddingLeft: 12 }}>
             {g.items.slice(0, 6).map((f, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+              <div key={i} className="tap" onClick={() => onSelect && onSelect(f)}
+                style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", cursor: "pointer" }}>
                 <span className="pill">{t("scan.kind." + f.label)}</span>
                 <span style={mono}>{f.file}{f.line ? `:${f.line}` : ""}{f.preview ? ` · ${f.preview}` : ""}</span>
+                <span className="chev" style={{ marginLeft: "auto" }}>›</span>
               </div>
             ))}
             {g.items.length > 6 && <div className="muted">{t("scan.more", { n: g.items.length - 6 })}</div>}
@@ -51,7 +54,7 @@ function Check() {
   );
 }
 
-export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg, onGoTab }) {
+export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg, onGoTab, onOpenFinding }) {
   const { t } = useLang();
   const [summary, setSummary] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -65,6 +68,7 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
   const [changes, setChanges] = useState(null);
   const [secrets, setSecrets] = useState(null);
   const [secBusy, setSecBusy] = useState(false);
+  const [secModal, setSecModal] = useState(null);
 
   const load = useCallback(() => {
     if (!accountId) return;
@@ -300,7 +304,7 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
             <b style={{ color: "var(--pink)" }}>{t("scan.summary", { n: secrets.own.total, repos: secrets.own.repos })}</b>
             {" — "}{t("scan.sub")}
           </div>
-          <ScanFindings findings={secrets.own.findings} t={t} />
+          <ScanFindings findings={secrets.own.findings} t={t} onSelect={setSecModal} />
           <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
             {t("scan.note")}{secrets.scanned_at ? ` · ${t("scan.last", { date: datetime(secrets.scanned_at) })}` : ""}
           </div>
@@ -320,11 +324,15 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
             <b style={{ color: "var(--amber)" }}>{t("scan.summary", { n: secrets.starred.total, repos: secrets.starred.repos })}</b>
             {" — "}{t("scan.starredSub")}
           </div>
-          <ScanFindings findings={secrets.starred.findings} t={t} />
+          <ScanFindings findings={secrets.starred.findings} t={t} onSelect={setSecModal} />
           <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
             {secrets.scanned_at ? t("scan.last", { date: datetime(secrets.scanned_at) }) : ""}
           </div>
         </div>
+      )}
+      {secModal && (
+        <FindingModal finding={secModal} onClose={() => setSecModal(null)}
+          onOpenPanel={(f) => { setSecModal(null); onOpenFinding && onOpenFinding(f); }} />
       )}
 
       {/* Running banner */}

@@ -286,7 +286,8 @@ def results_for(username: str, limit: int = 200) -> dict:
         sc["repos"] += 1
         sc["total"] += len(fs)
         for f in fs:
-            sc["findings"].append({"repo": repo, **f})
+            sc["findings"].append({"repo": repo, "full_name": entry.get("full_name"),
+                                   "browse": entry.get("browse"), **f})
     s = data.get("summary") or {}
     truncated = bool(s.get("truncated"))
     for sc in scopes.values():
@@ -315,25 +316,30 @@ def _mirror_dir(d: Path) -> Path | None:
     return None
 
 
-def _scan_targets(username: str) -> list[tuple[str, Path, str]]:
-    """Every mirror to scan as (label, git_dir, scope).
+def _scan_targets(username: str) -> list[tuple[str, Path, str, dict]]:
+    """Every mirror to scan as (label, git_dir, scope, meta).
 
     own: the account's repos (per repos.json) + gists — the user's leaks.
     starred: third-party clones — both "selected starred" clones that live in
     repositories/ (names on starred.json) and the engine's --all-starred tree
     at current/starred/<owner>/<repo>. Scanned informationally so the user can
     warn the upstream developer. Duplicates are deduped by full name.
+
+    meta carries what the panel needs to jump to a finding: `full_name` for the
+    live GitHub link, and `browse` = {name, owner, src} (or {gist}) matching the
+    in-panel repo-browser routing.
     """
     cur = config.BACKUPS_DIR / username / "current"
-    owned = {r.get("name") for r in _read_json(cur / "account" / "repos.json", [])
-             if r.get("name")}
+    owned_full = {r.get("name"): r.get("full_name")
+                  for r in _read_json(cur / "account" / "repos.json", [])
+                  if r.get("name")}
     starred_by_name: dict[str, str] = {}
     for r in _read_json(cur / "account" / "starred.json", []):
         fn = r.get("full_name") or ""
         if fn:
             starred_by_name[fn.split("/")[-1]] = fn
 
-    out: list[tuple[str, Path, str]] = []
+    out: list[tuple[str, Path, str, dict]] = []
     seen: set[str] = set()
     repos_root = cur / "repositories"
     if repos_root.is_dir():
@@ -341,19 +347,22 @@ def _scan_targets(username: str) -> list[tuple[str, Path, str]]:
             gd = _mirror_dir(d)
             if not gd:
                 continue
-            if not owned or d.name in owned:
-                out.append((d.name, gd, "own"))
+            browse = {"name": d.name, "owner": "", "src": ""}
+            if not owned_full or d.name in owned_full:
+                meta = {"full_name": owned_full.get(d.name), "browse": browse}
+                out.append((d.name, gd, "own", meta))
                 seen.add(d.name)
             elif d.name in starred_by_name:
                 full = starred_by_name[d.name]
-                out.append((full, gd, "starred"))
+                out.append((full, gd, "starred", {"full_name": full, "browse": browse}))
                 seen.add(full)
     gists_root = cur / "gists"
     if gists_root.is_dir():
         for d in sorted(gists_root.iterdir()):
             gd = _mirror_dir(d)
             if gd:
-                out.append((f"gist:{d.name}", gd, "own"))
+                out.append((f"gist:{d.name}", gd, "own",
+                            {"full_name": None, "browse": {"gist": d.name}}))
     starred_root = cur / "starred"
     if starred_root.is_dir():
         for owner_dir in sorted(starred_root.iterdir()):
@@ -363,7 +372,10 @@ def _scan_targets(username: str) -> list[tuple[str, Path, str]]:
                 gd = _mirror_dir(repo_dir)
                 full = f"{owner_dir.name}/{repo_dir.name}"
                 if gd and full not in seen:
-                    out.append((full, gd, "starred"))
+                    out.append((full, gd, "starred", {
+                        "full_name": full,
+                        "browse": {"name": repo_dir.name, "owner": owner_dir.name,
+                                   "src": "starred"}}))
     return out
 
 
@@ -383,14 +395,16 @@ def scan_account(username: str, force: bool = False) -> dict:
         prog = _progress.setdefault(username, {})
         prog.update(running=True, done=0, total=len(targets), current="")
         try:
-            for i, (name, git_dir, scope) in enumerate(targets):
+            for i, (name, git_dir, scope, meta) in enumerate(targets):
                 prog.update(done=i, current=name)
                 cached = prev_repos.get(name)
                 if cached and not force:
                     head_r = _git(git_dir, "rev-parse", "HEAD", timeout=30)
                     head = head_r.stdout.decode().strip() if head_r.returncode == 0 else None
                     if head and head == cached.get("head"):
-                        cached["scope"] = scope   # scope can change (e.g. un-starred)
+                        # Routing facts can change without HEAD moving
+                        # (un-starred, renamed) — always refresh them.
+                        cached.update(scope=scope, **meta)
                         repos_out[name] = cached
                         truncated = truncated or bool(cached.get("truncated"))
                         continue
@@ -399,6 +413,7 @@ def scan_account(username: str, force: bool = False) -> dict:
                 except Exception:
                     continue    # one broken mirror must not kill the whole scan
                 res["scope"] = scope
+                res.update(meta)
                 repos_out[name] = res
                 truncated = truncated or res["truncated"]
         finally:

@@ -98,6 +98,10 @@ def test_starred_clones_scanned_separately(tmp_path):
     assert res["own"]["total"] == 0
     assert res["starred"]["total"] >= 1
     assert all(f["repo"] == "dev/thirdparty" for f in res["starred"]["findings"])
+    # Routing metadata: GitHub link target + in-panel browse route.
+    f = res["starred"]["findings"][0]
+    assert f["full_name"] == "dev/thirdparty"
+    assert f["browse"] == {"name": "thirdparty", "owner": "", "src": ""}
 
 
 def test_all_starred_tree_is_scanned(tmp_path):
@@ -113,6 +117,8 @@ def test_all_starred_tree_is_scanned(tmp_path):
     assert res["starred"]["total"] >= 1
     assert any(f["repo"] == "acme/tool" and f["kind"] == "aws_key"
                for f in res["starred"]["findings"])
+    f = res["starred"]["findings"][0]
+    assert f["browse"] == {"name": "tool", "owner": "acme", "src": "starred"}
 
 
 def test_cache_skips_unchanged_head(tmp_path, monkeypatch):

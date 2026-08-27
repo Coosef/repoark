@@ -3,6 +3,17 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.18.0]
+### Added
+- **Click a secret-scan finding to see its detail — and jump straight to it.**
+  Every finding row (dashboard cards and repo view) opens a detail modal with
+  the repo, file, line, type and masked preview, plus two jump buttons: **Open
+  in RepoArk** (the exact file inside the backup browser) and **Open on
+  GitHub** (the live file, anchored to the line).
+- **Findings now also live inside their repo.** Opening a repo in the Content
+  browser shows that repo's own findings as a collapsible warning strip — each
+  repo's alarms stay with that repo, never mixed with others.
+
 ## [1.17.0]
 ### Changed
 - **The secret scan now shows what it's doing — and always shows a result.**

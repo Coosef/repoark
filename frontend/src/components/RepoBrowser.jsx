@@ -4,6 +4,7 @@ import DOMPurify from "dompurify";
 import { api, urls } from "../api.js";
 import { bytes, relative } from "../lib/format.js";
 import { Empty } from "./ui.jsx";
+import FindingModal from "./SecretFinding.jsx";
 import { useLang } from "../i18n.jsx";
 
 // A few common GitHub language colors for the About panel dot (fallback gray).
@@ -38,6 +39,29 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
   const [restorePriv, setRestorePriv] = useState(true);
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreResult, setRestoreResult] = useState(null);
+  // This repo's own secret-scan findings, shown as a warning strip so the
+  // alarms live inside the repo they belong to (never mixed with others).
+  const [secFindings, setSecFindings] = useState([]);
+  const [secOpen, setSecOpen] = useState(false);
+  const [secModal, setSecModal] = useState(null);
+
+  useEffect(() => {
+    api.secretScan(accountId).then((r) => {
+      const rows = [...(r.own?.findings || []), ...(r.starred?.findings || [])];
+      setSecFindings(rows.filter((x) =>
+        x.repo === (fullName || repo) ||
+        (x.browse && x.browse.name === repo &&
+         (x.browse.owner || "") === (owner || "") && (x.browse.src || "") === (src || ""))));
+    }).catch(() => {});
+  }, [accountId, repo, owner, src, fullName]);
+
+  function openFinding(f) {
+    setSecModal(null);
+    setView("files");
+    api.blob(accountId, repo, ref || "HEAD", f.file, owner, src)
+      .then((b) => setFile({ path: f.file, blob: b }))
+      .catch(() => {});
+  }
 
   async function doRestore() {
     setRestoreBusy(true);
@@ -56,7 +80,10 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
   useEffect(() => {
     api.refs(accountId, repo, owner, src).then((r) => {
       setRefs(r);
-      setRef(r.head || "HEAD");
+      // When deep-linked to a file (search / secret-scan), stay on the stable
+      // "HEAD" ref: switching to the branch name here re-fires the tree effect
+      // and would clobber the just-opened file. HEAD is the same commit.
+      if (!initialPath) setRef(r.head || "HEAD");
     }).catch((e) => setErr(e.message));
     api.overview(accountId, repo, owner, src).then((o) => {
       setOverview(o);
@@ -82,7 +109,9 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
   useEffect(() => {
     if (!ref) return;
     setErr("");
-    if (view === "files") loadTree("");
+    // The deep-link effect below opens the flagged file itself; loading the
+    // root tree here would immediately clear it again.
+    if (view === "files") { if (initialPath && !openedInitial) return; loadTree(""); }
     else if (view === "commits") api.commits(accountId, repo, ref, owner, src).then(setCommits).catch((e) => setErr(e.message));
     else if (view === "issues" || view === "pulls") {
       setThread(null);
@@ -91,16 +120,23 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
     }
   }, [ref, view, loadTree, accountId, repo, owner, src]);
 
-  // Jump straight to a file when opened from a search result.
+  // Jump straight to a file when opened from a search result or a secret-scan
+  // finding: open the blob AND preload its parent tree so "back" lands in the
+  // right folder instead of an empty view.
   const [openedInitial, setOpenedInitial] = useState(false);
   useEffect(() => {
     if (initialPath && ref && !openedInitial) {
       setOpenedInitial(true);
+      const dir = initialPath.includes("/")
+        ? initialPath.slice(0, initialPath.lastIndexOf("/")) : "";
+      api.tree(accountId, repo, ref, dir, owner, src)
+        .then((tr) => { setTree(tr); setPath(dir); })
+        .catch(() => {});
       api.blob(accountId, repo, ref, initialPath, owner, src)
         .then((b) => setFile({ path: initialPath, blob: b }))
-        .catch(() => {});
+        .catch(() => loadTree(""));
     }
-  }, [ref, initialPath, openedInitial, accountId, repo, owner, src]);
+  }, [ref, initialPath, openedInitial, accountId, repo, owner, src, loadTree]);
 
   function openFile(name) {
     const full = path ? `${path}/${name}` : name;
@@ -177,6 +213,7 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
   const refSelect = (
     <select value={shortSha ? "" : ref} onChange={(e) => setRef(e.target.value)} style={{ width: "auto", minWidth: 130 }}>
       {shortSha && <option value="">commit: {ref.slice(0, 8)}</option>}
+      {ref === "HEAD" && <option value="HEAD">{refs.head || "HEAD"}</option>}
       <optgroup label={t("repo.branches")}>{refs.branches.map((b) => <option key={b} value={b}>{b}</option>)}</optgroup>
       {refs.tags.length > 0 && (
         <optgroup label={t("repo.tags")}>{refs.tags.map((tg) => <option key={tg} value={tg}>{tg}</option>)}</optgroup>
@@ -216,6 +253,32 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
               : <button className="metapill" onClick={() => { setRestoreName(repo); setRestorePriv(overview.meta.private ?? true); setRestoreResult(null); setRestoreOpen((v) => !v); }}>↑ {t("repo.restore")}</button>}
           </span>
         </div>
+      )}
+
+      {secFindings.length > 0 && (
+        <div className="card" style={{ borderColor: "var(--amber)", margin: "12px 0 4px", padding: "12px 16px" }}>
+          <div className="row spread" onClick={() => setSecOpen((v) => !v)} style={{ cursor: "pointer" }}>
+            <b>🔐 {t("scan.repoAlert", { n: secFindings.length })}</b>
+            <span className="chev" style={{ transform: secOpen ? "rotate(90deg)" : "none" }}>›</span>
+          </div>
+          {secOpen && (
+            <div style={{ marginTop: 10, display: "grid", gap: 5 }}>
+              {secFindings.map((f, i) => (
+                <div key={i} onClick={() => setSecModal(f)}
+                  style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", cursor: "pointer" }}>
+                  <span className="pill">{t("scan.kind." + f.label)}</span>
+                  <span style={{ fontFamily: "ui-monospace, SFMono-Regular, monospace", fontSize: 12, overflowWrap: "anywhere" }}>
+                    {f.file}{f.line ? `:${f.line}` : ""}{f.preview ? ` · ${f.preview}` : ""}
+                  </span>
+                  <span className="chev" style={{ marginLeft: "auto" }}>›</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {secModal && (
+        <FindingModal finding={secModal} onClose={() => setSecModal(null)} onOpenPanel={openFinding} />
       )}
 
       {restoreOpen && (

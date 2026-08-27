@@ -21,7 +21,7 @@ const TABS = [
 
 const stars = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(".0", "") + "k" : (n ?? 0));
 
-export default function Content({ accountId, onMsg }) {
+export default function Content({ accountId, onMsg, focus, onFocusDone }) {
   const { t } = useLang();
   const { confirm } = useDialog();
   const [tab, setTab] = useState("repos");
@@ -42,6 +42,16 @@ export default function Content({ accountId, onMsg }) {
     if (!accountId) return;
     api.deleted(accountId).then((d) => setGone(new Set(d.map((r) => r.name)))).catch(() => {});
   }, [accountId]);
+
+  // Deep link from a secret-scan finding: open the repo browser (or gist)
+  // straight at the flagged file, then consume the request.
+  useEffect(() => {
+    if (!focus) return;
+    if (focus.gist) setGist({ id: focus.gist, description: "" });
+    else setRepo({ name: focus.name, owner: focus.owner, src: focus.src,
+                   full_name: focus.full_name, path: focus.path });
+    onFocusDone && onFocusDone();
+  }, [focus]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // "search" has no list payload of its own.
