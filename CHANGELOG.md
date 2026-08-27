@@ -3,6 +3,18 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.20.0]
+### Fixed
+- **The in-repo warning strip now actually shows up.** Opening a flagged repo
+  from the Content list passed a different internal location tag than the scan
+  recorded, so the strip stayed hidden; and on large starred trees the API's
+  truncation could drop a repo's findings entirely. The repo view now asks the
+  server for that repo's own findings directly — exact match, never truncated.
+### Added
+- **🔐 badges in the repo list.** Every flagged repo shows its finding count
+  right in the Content list (red for your own repos, amber for starred), so
+  you can see which repos leak before opening them.
+
 ## [1.19.0]
 ### Added
 - **A dedicated Security page.** The whole secret scan now lives in its own

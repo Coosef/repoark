@@ -66,6 +66,11 @@ export const api = {
   // Secret scan: committed .env / API keys / passwords in the backed-up repos.
   secretScan: (id) => req("GET", `/api/accounts/${id}/secret-scan`),
   runSecretScan: (id, force) => req("POST", `/api/accounts/${id}/secret-scan`, { force: !!force }),
+  // One repo's own findings (for the in-repo warning strip) + per-repo counts
+  // (for the repo-list badges).
+  secretScanRepo: (id, name, owner = "", src = "") =>
+    req("GET", `/api/accounts/${id}/secret-scan/repo?name=${encodeURIComponent(name)}&owner=${encodeURIComponent(owner)}&src=${encodeURIComponent(src)}`),
+  secretScanCounts: (id) => req("GET", `/api/accounts/${id}/secret-scan/counts`),
   // Read the actual flagged line from the backup, on explicit request (eye button).
   revealSecret: (id, f) => req("POST", `/api/accounts/${id}/secret-scan/reveal`,
     { file: f.file, line: f.line, browse: f.browse }),

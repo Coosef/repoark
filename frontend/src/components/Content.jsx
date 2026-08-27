@@ -33,6 +33,7 @@ export default function Content({ accountId, onMsg, focus, onFocusDone }) {
   const [gist, setGist] = useState(null);       // {id, description} open gist browser
   const [snapshot, setSnapshot] = useState(null); // open snapshot detail
   const [gone, setGone] = useState(new Set());  // repos deleted from GitHub
+  const [secCounts, setSecCounts] = useState({}); // repo label -> secret findings
   const [repoFilter, setRepoFilter] = useState("all"); // all | own | starred | other
   const [selMode, setSelMode] = useState(false);       // multi-select for bulk delete
   const [sel, setSel] = useState(new Set());           // selected repo names
@@ -41,6 +42,7 @@ export default function Content({ accountId, onMsg, focus, onFocusDone }) {
   useEffect(() => {
     if (!accountId) return;
     api.deleted(accountId).then((d) => setGone(new Set(d.map((r) => r.name)))).catch(() => {});
+    api.secretScanCounts(accountId).then(setSecCounts).catch(() => setSecCounts({}));
   }, [accountId]);
 
   // Deep link from a secret-scan finding: open the repo browser (or gist)
@@ -171,6 +173,8 @@ export default function Content({ accountId, onMsg, focus, onFocusDone }) {
                 const k = kind(r);
                 const id = rid(r);
                 const checked = sel.has(id);
+                // Secret-scan labels: own repos by folder name, starred by full name.
+                const leaks = secCounts[r.full_name] ?? secCounts[r.name] ?? 0;
                 return (
                   <div className={`frow ${selMode && checked ? "sel" : ""}`} key={id}
                     onClick={() => selMode ? toggle(id) : openRepo(r)}>
@@ -186,6 +190,13 @@ export default function Content({ accountId, onMsg, focus, onFocusDone }) {
                         {k === "starred" && r.full_name ? r.full_name : r.name}
                         {k === "starred" && <span className="badge" style={amber}>{t("content.starredTag")}</span>}
                         {k === "other" && <span className="badge" style={amber}>{t("content.filterOther")}</span>}
+                        {leaks > 0 && (
+                          <span className="badge" style={{ marginLeft: 8,
+                            background: k === "own" ? "rgba(255,45,85,.14)" : "var(--amberT)",
+                            color: k === "own" ? "var(--pink)" : "var(--amber)" }}>
+                            🔐 {leaks}
+                          </span>
+                        )}
                         {gone.has(r.name) && <span className="badge badge-success" style={{ marginLeft: 8 }}>{t("content.vault")}</span>}
                       </div>
                       <div className="row-desc">{[bytes(r.size_bytes), r.language, r.private ? t("content.private") : null, gone.has(r.name) ? t("content.onlyBackup") : null].filter(Boolean).join(" · ")}</div>

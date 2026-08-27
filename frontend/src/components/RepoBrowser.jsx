@@ -46,14 +46,12 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
   const [secModal, setSecModal] = useState(null);
 
   useEffect(() => {
-    api.secretScan(accountId).then((r) => {
-      const rows = [...(r.own?.findings || []), ...(r.starred?.findings || [])];
-      setSecFindings(rows.filter((x) =>
-        x.repo === (fullName || repo) ||
-        (x.browse && x.browse.name === repo &&
-         (x.browse.owner || "") === (owner || "") && (x.browse.src || "") === (src || ""))));
-    }).catch(() => {});
-  }, [accountId, repo, owner, src, fullName]);
+    // Server-side per-repo lookup: never truncated, and immune to the
+    // ""-vs-"repositories" src spelling difference across entry points.
+    api.secretScanRepo(accountId, repo, owner || "", src || "")
+      .then(setSecFindings)
+      .catch(() => {});
+  }, [accountId, repo, owner, src]);
 
   function openFinding(f) {
     setSecModal(null);

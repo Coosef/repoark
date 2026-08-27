@@ -177,6 +177,30 @@ def test_old_scan_data_gets_routing_fallbacks(tmp_path):
     assert starred["browse"] == {"name": "tool", "owner": "dev", "src": "starred"}
 
 
+def test_per_repo_findings_and_counts(tmp_path):
+    _setup_account(tmp_path, "repoview", {
+        "webapp": {".env": f"K={FAKE_AWS}\n"},
+    }, own_names=["webapp"])
+    cur = config.BACKUPS_DIR / "repoview" / "current"
+    _make_mirror(tmp_path / "work-sv", cur / "starred" / "acme" / "tool" / "repository",
+                 {"conf.yml": f'token: "{FAKE_GH}"\n'})
+    (cur / "account" / "starred.json").write_text(json.dumps([{"full_name": "acme/tool"}]))
+    secscan.scan_account("repoview")
+
+    # Own repo: the panel opens it with src "" OR "repositories" — both match.
+    for src in ("", "repositories"):
+        rows = secscan.findings_in_repo("repoview", "webapp", "", src)
+        assert rows and all(r["repo"] == "webapp" for r in rows)
+    # Starred tree clone by (name, owner, src).
+    rows = secscan.findings_in_repo("repoview", "tool", "acme", "starred")
+    assert rows and rows[0]["repo"] == "acme/tool"
+    # Wrong owner: no cross-repo bleed.
+    assert secscan.findings_in_repo("repoview", "tool", "other", "starred") == []
+    # Per-repo counts for the list badges.
+    counts = secscan.counts_for("repoview")
+    assert counts["webapp"] >= 1 and counts["acme/tool"] >= 1
+
+
 def test_progress_and_async_scan(tmp_path):
     _setup_account(tmp_path, "proguser", {"p1": {".env": "P_PASSWORD='longpassword12'\n"}})
     secscan.scan_account("proguser")

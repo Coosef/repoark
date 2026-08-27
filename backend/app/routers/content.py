@@ -117,6 +117,21 @@ def secret_scan_run(account_id: int, payload: dict | None = None,
     return secscan.results_for(account.username)
 
 
+@router.get("/{account_id}/secret-scan/repo")
+def secret_scan_repo(account_id: int, name: str, owner: str = "", src: str = "",
+                     session: Session = Depends(get_session)):
+    """One repo's own findings (untruncated) for the in-repo warning strip."""
+    account = _account(account_id, session)
+    return secscan.findings_in_repo(account.username, name, owner, src)
+
+
+@router.get("/{account_id}/secret-scan/counts")
+def secret_scan_counts(account_id: int, session: Session = Depends(get_session)):
+    """{repo_label: finding_count} so the repo list can badge flagged repos."""
+    account = _account(account_id, session)
+    return secscan.counts_for(account.username)
+
+
 @router.post("/{account_id}/secret-scan/reveal")
 def secret_scan_reveal(account_id: int, payload: dict,
                        session: Session = Depends(get_session)):

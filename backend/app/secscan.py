@@ -336,6 +336,47 @@ def _mirror_dir(d: Path) -> Path | None:
     return None
 
 
+def _norm_src(src) -> str:
+    """The panel routes own repos as src "" or "repositories" interchangeably;
+    treat them as the same location. Only "starred" is a distinct tree."""
+    return "starred" if src == "starred" else ""
+
+
+def findings_in_repo(username: str, name: str, owner: str = "", src: str = "") -> list[dict]:
+    """All findings belonging to ONE backed-up repo, straight from the stored
+    scan — used by the repo view, so per-scope API truncation never hides a
+    repo's own alarms. Matched on the browse route (folder/owner/tree), with
+    the label as a fallback for pre-metadata results."""
+    data = _read_json(_scan_path(username), {})
+    want_src = _norm_src(src)
+    out: list[dict] = []
+    for label, entry in sorted((data.get("repos") or {}).items()):
+        fs = entry.get("findings", [])
+        if not fs:
+            continue
+        full, browse = _row_routing(username, label, entry)
+        match = (browse.get("name") == name
+                 and (browse.get("owner") or "") == (owner or "")
+                 and _norm_src(browse.get("src")) == want_src)
+        if not match and not owner and want_src == "":
+            match = label == name          # legacy label-only fallback
+        if match:
+            scope = entry.get("scope") or "own"
+            for f in fs:
+                out.append({"repo": label, "full_name": full, "browse": browse,
+                            "scope": scope, **f})
+    return out
+
+
+def counts_for(username: str) -> dict:
+    """{repo_label: finding_count} for every repo with findings — cheap enough
+    for the Content list to badge each row."""
+    data = _read_json(_scan_path(username), {})
+    return {label: len(entry.get("findings") or [])
+            for label, entry in (data.get("repos") or {}).items()
+            if entry.get("findings")}
+
+
 _SAFE_PART = re.compile(r"^[\w.\-]+$")
 _REVEAL_MAX_BLOB = 20 * 1024 * 1024   # refuse to read absurdly large files
 
