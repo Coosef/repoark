@@ -134,6 +134,49 @@ def test_cache_skips_unchanged_head(tmp_path, monkeypatch):
     assert forced["total"] == 2 and len(calls) == 1  # force rescans
 
 
+def test_reveal_reads_the_flagged_line_on_demand(tmp_path):
+    _setup_account(tmp_path, "revealuser",
+                   {"r1": {".env": f"A=1\nAWS_KEY={FAKE_AWS}\n"}}, own_names=["r1"])
+    res = secscan.scan_account("revealuser")
+    f = next(x for x in res["own"]["findings"] if x["kind"] == "aws_key")
+    out = secscan.reveal("revealuser", {"file": f["file"], "line": f["line"],
+                                        "browse": f["browse"]})
+    assert out["text"] == f"AWS_KEY={FAKE_AWS}"     # the real value, on demand only
+    # Traversal / bogus input is rejected, never a filesystem walk.
+    for bad in ({"file": "../x", "line": 1, "browse": f["browse"]},
+                {"file": ".env", "line": 99, "browse": f["browse"]},
+                {"file": ".env", "line": 1, "browse": {"name": "../../etc"}}):
+        try:
+            secscan.reveal("revealuser", bad)
+            assert False, bad
+        except ValueError:
+            pass
+
+
+def test_old_scan_data_gets_routing_fallbacks(tmp_path):
+    # Results written by a pre-1.18 scan have no full_name/browse — the API
+    # must still produce working jump targets without a rescan.
+    path = secscan._scan_path("legacyuser")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "summary": {"total": 2, "repos_scanned": 2},
+        "repos": {
+            "myrepo": {"scope": "own", "head": "x",
+                       "findings": [{"file": ".env", "line": 1, "kind": "aws_key",
+                                     "label": "key", "preview": "AKIA…"}]},
+            "dev/tool": {"scope": "starred", "head": "y",
+                         "findings": [{"file": "a.yml", "line": 2, "kind": "github_token",
+                                       "label": "key", "preview": "ghp_…"}]},
+        }}))
+    res = secscan.results_for("legacyuser")
+    own = res["own"]["findings"][0]
+    assert own["full_name"] == "legacyuser/myrepo"
+    assert own["browse"] == {"name": "myrepo", "owner": "", "src": ""}
+    starred = res["starred"]["findings"][0]
+    assert starred["full_name"] == "dev/tool"
+    assert starred["browse"] == {"name": "tool", "owner": "dev", "src": "starred"}
+
+
 def test_progress_and_async_scan(tmp_path):
     _setup_account(tmp_path, "proguser", {"p1": {".env": "P_PASSWORD='longpassword12'\n"}})
     secscan.scan_account("proguser")

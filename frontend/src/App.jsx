@@ -7,6 +7,7 @@ import Content from "./components/Content.jsx";
 import History from "./components/History.jsx";
 import Settings from "./components/Settings.jsx";
 import Kasa from "./components/Kasa.jsx";
+import SecurityPage from "./components/SecurityPage.jsx";
 import Timeline from "./components/Timeline.jsx";
 import Wizard from "./components/Wizard.jsx";
 import { RunPill } from "./components/Progress.jsx";
@@ -17,6 +18,7 @@ const NAV = [
   { key: "timeline", label: "Zaman Tüneli", d: "M12 8v4l3 2M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18" },
   { key: "jobs", label: "Yedek İşleri", d: "M12 7.5v5l3.5 2M21 12a9 9 0 1 1-2.6-6.3M21 3v4h-4" },
   { key: "kasa", label: "Kasa", d: "M12 3.3l7 2.8v5.4c0 5-3.5 8.1-7 10.2c-3.5-2.1-7-5.2-7-10.2V6.1z" },
+  { key: "security", label: "Güvenlik", d: "M12 3.3l7 2.8v5.4c0 5-3.5 8.1-7 10.2c-3.5-2.1-7-5.2-7-10.2V6.1zM12 9.6a2 2 0 0 1 2 2c0 .8-.5 1.4-1.1 1.8l.4 2.6h-2.6l.4-2.6c-.6-.4-1.1-1-1.1-1.8a2 2 0 0 1 2-2" },
   { key: "content", label: "İçerik", d: "M3 7l1.4-3h15.2L21 7M4 7v12a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V7M3 7h18M10 11h4" },
   { key: "history", label: "Geçmiş", d: "M3 3v5h5M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3 8M12 8v4.5l3.5 2" },
   { key: "settings", label: "Ayarlar", d: "M12 15a3 3 0 1 0 0-6a3 3 0 0 0 0 6M19.4 13a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0a1.6 1.6 0 0 0-2.7-1.1a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 14.6a1.6 1.6 0 0 0-1-.6H2a2 2 0 0 1 0-4a1.6 1.6 0 0 0 1.6-1a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H8a1.6 1.6 0 0 0 1-1.6V3a2 2 0 0 1 4 0a1.6 1.6 0 0 0 1 1.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V8a1.6 1.6 0 0 0 1.6 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" },
@@ -40,6 +42,7 @@ export default function App() {
   const [contentFocus, setContentFocus] = useState(null); // deep-link into Content (repo/file or gist)
   const [msg, setMsg] = useState("");
   const [deletedCount, setDeletedCount] = useState(0);
+  const [secCount, setSecCount] = useState(0);   // own-repo secret findings (nav badge)
   const [wizardOpen, setWizardOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [autoDecided, setAutoDecided] = useState(false);
@@ -79,6 +82,14 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
   useEffect(() => { api.authStatus().then((s) => setAuthEnabled(s.enabled)).catch(() => {}); }, []);
+  useEffect(() => {
+    const check = () => api.alerts()
+      .then((a) => setSecCount((a.secrets || []).reduce((s, x) => s + (x.own || 0), 0)))
+      .catch(() => {});
+    check();
+    const id = setInterval(check, 8000);
+    return () => clearInterval(id);
+  }, []);
   useEffect(() => { api.version().then((h) => setVersion(h.version || "")).catch(() => {}); }, []);
   useEffect(() => {
     const check = () => api.updateCheck().then(setUpdate).catch(() => {});
@@ -155,6 +166,7 @@ export default function App() {
               <span style={{ flex: 1, textAlign: "left" }}>{t("nav." + n.key)}</span>
               {n.key === "jobs" && runningCount > 0 && <span className="dot" />}
               {n.key === "kasa" && deletedCount > 0 && <span className="pill" style={{ padding: "1px 8px", fontSize: 11.5, background: "var(--amberT)", color: "var(--amber)" }}>{deletedCount}</span>}
+              {n.key === "security" && secCount > 0 && <span className="pill" style={{ padding: "1px 8px", fontSize: 11.5, background: "rgba(255,45,85,.14)", color: "var(--pink)" }}>{secCount}</span>}
             </button>
           ))}
         </nav>
@@ -231,11 +243,12 @@ export default function App() {
             </div>
           </div>
 
-          {tab === "dashboard" && <Dashboard accountId={activeAccount} accounts={accounts} jobs={jobs} onRefresh={refresh} onMsg={setMsg} onGoTab={setTab} onOpenFinding={openFinding} />}
+          {tab === "dashboard" && <Dashboard accountId={activeAccount} accounts={accounts} jobs={jobs} onRefresh={refresh} onMsg={setMsg} onGoTab={setTab} />}
           {tab === "accounts" && <Accounts accounts={accounts} jobs={jobs} onRefresh={refresh} onAddJob={addJob} onMsg={setMsg} />}
           {tab === "jobs" && <Jobs jobs={jobs} accounts={accounts} editing={editing} setEditing={setEditing} onRefresh={refresh} onMsg={setMsg} onShowHistory={showHistory} />}
           {tab === "timeline" && <Timeline accountId={activeAccount} />}
           {tab === "kasa" && <Kasa accountId={activeAccount} onMsg={setMsg} />}
+          {tab === "security" && <SecurityPage accountId={activeAccount} onMsg={setMsg} onOpenFinding={openFinding} />}
           {tab === "content" && <Content accountId={activeAccount} onMsg={setMsg} focus={contentFocus} onFocusDone={() => setContentFocus(null)} />}
           {tab === "history" && <History jobs={jobs} focusJobId={historyFocus} />}
           {tab === "settings" && <Settings accounts={accounts} jobs={jobs} onRefresh={refresh} onAddJob={addJob} onMsg={setMsg} theme={theme} setTheme={setTheme} />}

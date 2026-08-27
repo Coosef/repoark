@@ -117,6 +117,18 @@ def secret_scan_run(account_id: int, payload: dict | None = None,
     return secscan.results_for(account.username)
 
 
+@router.post("/{account_id}/secret-scan/reveal")
+def secret_scan_reveal(account_id: int, payload: dict,
+                       session: Session = Depends(get_session)):
+    """Read the actual flagged line from the backup, on explicit request only
+    (the eye button). The value is never stored — see secscan.reveal."""
+    account = _account(account_id, session)
+    try:
+        return secscan.reveal(account.username, payload or {})
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
 @router.get("/{account_id}/summary")
 def summary(account_id: int, session: Session = Depends(get_session)):
     account = _account(account_id, session)

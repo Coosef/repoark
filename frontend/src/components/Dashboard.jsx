@@ -1,49 +1,12 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api } from "../api.js";
 import { bytes, relative, datetime } from "../lib/format.js";
 import { LineChart, Empty } from "./ui.jsx";
 import LiveProgress from "./Progress.jsx";
 import BackupCalendar from "./BackupCalendar.jsx";
-import FindingModal from "./SecretFinding.jsx";
 import { useLang } from "../i18n.jsx";
 
 const RING_C = 2 * Math.PI * 63; // circumference for r=63
-
-// Secret-scan findings grouped per repo: a repo header, then each hit as
-// "file:line · masked preview" with a kind chip — so it's obvious exactly
-// which repo and where.
-function ScanFindings({ findings, t, onSelect }) {
-  const groups = [];
-  const idx = {};
-  for (const f of findings) {
-    if (!(f.repo in idx)) { idx[f.repo] = groups.length; groups.push({ repo: f.repo, items: [] }); }
-    groups[idx[f.repo]].items.push(f);
-  }
-  const mono = { fontFamily: "ui-monospace, SFMono-Regular, monospace", fontSize: 12, overflowWrap: "anywhere" };
-  return (
-    <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-      {groups.slice(0, 8).map((g) => (
-        <div key={g.repo}>
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>
-            📁 {g.repo} <span className="muted" style={{ fontWeight: 400 }}>({g.items.length})</span>
-          </div>
-          <div style={{ display: "grid", gap: 4, paddingLeft: 12 }}>
-            {g.items.slice(0, 6).map((f, i) => (
-              <div key={i} className="tap" onClick={() => onSelect && onSelect(f)}
-                style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap", cursor: "pointer" }}>
-                <span className="pill">{t("scan.kind." + f.label)}</span>
-                <span style={mono}>{f.file}{f.line ? `:${f.line}` : ""}{f.preview ? ` · ${f.preview}` : ""}</span>
-                <span className="chev" style={{ marginLeft: "auto" }}>›</span>
-              </div>
-            ))}
-            {g.items.length > 6 && <div className="muted">{t("scan.more", { n: g.items.length - 6 })}</div>}
-          </div>
-        </div>
-      ))}
-      {groups.length > 8 && <div className="muted">{t("scan.more", { n: groups.length - 8 })}</div>}
-    </div>
-  );
-}
 
 function Check() {
   return (
@@ -54,7 +17,7 @@ function Check() {
   );
 }
 
-export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg, onGoTab, onOpenFinding }) {
+export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg, onGoTab }) {
   const { t } = useLang();
   const [summary, setSummary] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -67,8 +30,6 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
   const [healthBusy, setHealthBusy] = useState(false);
   const [changes, setChanges] = useState(null);
   const [secrets, setSecrets] = useState(null);
-  const [secBusy, setSecBusy] = useState(false);
-  const [secModal, setSecModal] = useState(null);
 
   const load = useCallback(() => {
     if (!accountId) return;
@@ -83,34 +44,6 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
     api.changes(accountId).then(setChanges).catch(() => setChanges(null));
     api.secretScan(accountId).then(setSecrets).catch(() => setSecrets(null));
   }, [accountId]);
-
-  // The scan runs in the background on the server; here we just start it —
-  // the poll effect below shows live progress and announces the result.
-  async function rescanSecrets() {
-    setSecBusy(true);
-    try {
-      setSecrets(await api.runSecretScan(accountId, true));
-    } catch (e) {
-      onMsg(t("toast.error", { msg: e.message }));
-    } finally {
-      setSecBusy(false);
-    }
-  }
-
-  // While a scan runs, poll faster than the page's 4s refresh so the progress
-  // bar feels live; when it flips to done, announce the outcome once.
-  const prevScanRunning = useRef(false);
-  useEffect(() => {
-    if (prevScanRunning.current && secrets && !secrets.running) {
-      onMsg(secrets.total > 0 ? t("scan.foundToast", { n: secrets.total }) : t("scan.none"));
-    }
-    prevScanRunning.current = !!secrets?.running;
-    if (!secrets?.running) return;
-    const id = setInterval(() => {
-      api.secretScan(accountId).then(setSecrets).catch(() => {});
-    }, 1500);
-    return () => clearInterval(id);
-  }, [secrets?.running, accountId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   async function verifyHealth() {
     setHealthBusy(true);
@@ -255,84 +188,47 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
         </div>
       ))}
 
-      {/* Secret scan running: a live progress card so a long starred-tree
-          scan is never a silent busy button. */}
+      {/* Secret-scan status: compact rows only — the full detail lives on the
+          dedicated Security page. Own findings = red/urgent, starred = amber. */}
       {secrets?.running && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div className="card-lead"><span className="spinner" /><b>🔐 {t("scan.progressTitle")}</b></div>
-          {secrets.progress?.total > 0 && (
-            <>
-              <div className="storagebar" style={{ marginTop: 12 }}>
-                <div style={{ width: `${Math.round(100 * secrets.progress.done / secrets.progress.total)}%`, background: "var(--accent)" }} />
+        <div className="group" style={{ marginTop: 16 }}>
+          <div className="row-item tap" onClick={() => onGoTab("security")}>
+            <div className="isq lg"><span className="spinner" /></div>
+            <div className="row-body">
+              <div className="row-title">{t("scan.progressTitle")}</div>
+              <div className="row-desc">
+                {secrets.progress?.total > 0
+                  ? t("scan.progress", { done: secrets.progress.done, total: secrets.progress.total, repo: secrets.progress.current || "…" })
+                  : t("scan.scanning")}
               </div>
-              <div className="muted" style={{ marginTop: 6 }}>
-                {t("scan.progress", { done: secrets.progress.done, total: secrets.progress.total, repo: secrets.progress.current || "…" })}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Scan done and clean: a persistent green result so "no news" is
-          visibly good news, not a missing card. */}
-      {secrets && !secrets.running && secrets.total === 0 && secrets.scanned_at && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div className="row spread">
-            <div>
-              <b style={{ color: "var(--green)" }}>🔐 {t("scan.none")}</b>{" "}
-              <span className="muted">
-                — {t("scan.scannedCount", { n: secrets.repos_scanned })} · {t("scan.last", { date: datetime(secrets.scanned_at) })}
-              </span>
             </div>
-            <button className="secondary" onClick={rescanSecrets} disabled={secBusy || secrets.running}>{t("scan.scanNow")}</button>
+            <div className="row-right"><span className="chev">›</span></div>
           </div>
         </div>
       )}
-
-      {/* Secrets found inside the backed-up repos (masked previews), in two
-          separate cards so the user's own leaks never mix with third-party
-          starred clones: own = red/urgent, starred = amber/informational. */}
-      {secrets && secrets.own?.total > 0 && (
-        <div className="card" style={{ marginTop: 16, borderColor: "var(--pink)" }}>
-          <div className="row spread">
-            <h3>🔐 {t("scan.title")}</h3>
-            <button className="secondary" onClick={rescanSecrets} disabled={secBusy || secrets.running}>
-              {secBusy ? t("scan.scanning") : t("scan.scanNow")}
-            </button>
-          </div>
-          <div className="muted">
-            <b style={{ color: "var(--pink)" }}>{t("scan.summary", { n: secrets.own.total, repos: secrets.own.repos })}</b>
-            {" — "}{t("scan.sub")}
-          </div>
-          <ScanFindings findings={secrets.own.findings} t={t} onSelect={setSecModal} />
-          <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
-            {t("scan.note")}{secrets.scanned_at ? ` · ${t("scan.last", { date: datetime(secrets.scanned_at) })}` : ""}
+      {secrets && !secrets.running && secrets.own?.total > 0 && (
+        <div className="group" style={{ marginTop: 16 }}>
+          <div className="row-item tap" onClick={() => onGoTab("security")}>
+            <div className="isq lg isq-pink">🔐</div>
+            <div className="row-body">
+              <div className="row-title">{t("scan.summary", { n: secrets.own.total, repos: secrets.own.repos })}</div>
+              <div className="row-desc">{t("scan.sub")}</div>
+            </div>
+            <div className="row-right"><span style={{ color: "var(--link)" }}>{t("nav.security")}</span><span className="chev">›</span></div>
           </div>
         </div>
       )}
-      {secrets && secrets.starred?.total > 0 && (
-        <div className="card" style={{ marginTop: 16, borderColor: "var(--amber)" }}>
-          <div className="row spread">
-            <h3>⭐ {t("scan.starredTitle")}</h3>
-            {!(secrets.own?.total > 0) && (
-              <button className="secondary" onClick={rescanSecrets} disabled={secBusy || secrets.running}>
-                {secBusy ? t("scan.scanning") : t("scan.scanNow")}
-              </button>
-            )}
-          </div>
-          <div className="muted">
-            <b style={{ color: "var(--amber)" }}>{t("scan.summary", { n: secrets.starred.total, repos: secrets.starred.repos })}</b>
-            {" — "}{t("scan.starredSub")}
-          </div>
-          <ScanFindings findings={secrets.starred.findings} t={t} onSelect={setSecModal} />
-          <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
-            {secrets.scanned_at ? t("scan.last", { date: datetime(secrets.scanned_at) }) : ""}
+      {secrets && !secrets.running && secrets.starred?.total > 0 && (
+        <div className="group" style={{ marginTop: 16 }}>
+          <div className="row-item tap" onClick={() => onGoTab("security")}>
+            <div className="isq lg isq-amber">⭐</div>
+            <div className="row-body">
+              <div className="row-title">{t("scan.starredTitle")}: {t("scan.summary", { n: secrets.starred.total, repos: secrets.starred.repos })}</div>
+              <div className="row-desc">{t("scan.starredSub")}</div>
+            </div>
+            <div className="row-right"><span style={{ color: "var(--link)" }}>{t("nav.security")}</span><span className="chev">›</span></div>
           </div>
         </div>
-      )}
-      {secModal && (
-        <FindingModal finding={secModal} onClose={() => setSecModal(null)}
-          onOpenPanel={(f) => { setSecModal(null); onOpenFinding && onOpenFinding(f); }} />
       )}
 
       {/* Running banner */}

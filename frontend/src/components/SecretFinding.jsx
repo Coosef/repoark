@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../api.js";
 import { useLang } from "../i18n.jsx";
 
 // The live-GitHub location of a finding. /blob/HEAD/ resolves to the default
@@ -12,15 +13,32 @@ export function githubUrl(f) {
 }
 
 // Detail modal for one secret-scan finding, with two jump targets: the file
-// inside RepoArk's own backup browser, and the live file on GitHub.
-export default function FindingModal({ finding: f, onClose, onOpenPanel }) {
+// inside RepoArk's own backup browser, and the live file on GitHub. The eye
+// button fetches the real value from the backup on demand — never stored.
+export default function FindingModal({ finding: f, accountId, onClose, onOpenPanel }) {
   const { t } = useLang();
+  const [revealed, setRevealed] = useState(null);
+  const [revealBusy, setRevealBusy] = useState(false);
+  useEffect(() => { setRevealed(null); }, [f]);
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
   if (!f) return null;
+
+  async function toggleReveal() {
+    if (revealed != null) { setRevealed(null); return; }
+    setRevealBusy(true);
+    try {
+      const r = await api.revealSecret(accountId, f);
+      setRevealed(r.text);
+    } catch (e) {
+      setRevealed(`✗ ${e.message}`);
+    } finally {
+      setRevealBusy(false);
+    }
+  }
 
   const gh = githubUrl(f);
   const mono = { fontFamily: "ui-monospace, SFMono-Regular, monospace", fontSize: 12.5, overflowWrap: "anywhere" };
@@ -43,7 +61,22 @@ export default function FindingModal({ finding: f, onClose, onOpenPanel }) {
             {t("scan.kind." + f.label)}{" "}
             <span className="pill" style={{ ...mono, fontSize: 11 }}>{f.kind}</span>
           </>)}
-          {f.preview && row(t("scan.preview"), <span style={mono}>{f.preview}</span>)}
+          {f.preview && row(t("scan.preview"), <>
+            <span style={mono}>{f.preview}</span>
+            {!!f.line && accountId && (
+              <button type="button" className="link" style={{ marginLeft: 10 }}
+                onClick={toggleReveal} disabled={revealBusy}>
+                👁 {revealBusy ? "…" : revealed != null ? t("scan.hide") : t("scan.reveal")}
+              </button>
+            )}
+          </>)}
+          {revealed != null && (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <pre style={{ ...mono, background: "var(--fill)", padding: "8px 10px",
+                            borderRadius: 8, margin: 0, whiteSpace: "pre-wrap" }}>{revealed}</pre>
+              <div className="muted" style={{ fontSize: 11.5, marginTop: 4 }}>{t("scan.revealNote")}</div>
+            </div>
+          )}
         </div>
         <div className="dlg-actions" style={{ flexWrap: "wrap" }}>
           <button type="button" className="dlg-cancel" onClick={onClose}>{t("common.close")}</button>
@@ -53,7 +86,7 @@ export default function FindingModal({ finding: f, onClose, onOpenPanel }) {
               ↗ {t("scan.openGithub")}
             </a>
           )}
-          {f.browse && onOpenPanel && (
+          {onOpenPanel && (
             <button type="button" className="dlg-confirm" onClick={() => onOpenPanel(f)}>
               {t("scan.openPanel")}
             </button>

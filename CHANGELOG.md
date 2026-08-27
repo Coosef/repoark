@@ -3,6 +3,20 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.19.0]
+### Added
+- **A dedicated Security page.** The whole secret scan now lives in its own
+  sidebar tab — run scans, watch live progress, and work through the findings
+  there. The sidebar shows a red badge with your own-repo finding count, and
+  the dashboard keeps only compact alert rows that take you to the page.
+- **An eye button in the finding detail.** The masked value can now be
+  revealed on demand: the real line is read from the backup only at the moment
+  you ask and is never stored anywhere.
+### Fixed
+- The detail modal's **Open in RepoArk / Open on GitHub** buttons now also
+  appear for findings produced by an older scan (before jump metadata
+  existed) — the server fills in the routing so no rescan is required.
+
 ## [1.18.0]
 ### Added
 - **Click a secret-scan finding to see its detail — and jump straight to it.**

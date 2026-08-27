@@ -278,7 +278,7 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
         </div>
       )}
       {secModal && (
-        <FindingModal finding={secModal} onClose={() => setSecModal(null)} onOpenPanel={openFinding} />
+        <FindingModal finding={secModal} accountId={accountId} onClose={() => setSecModal(null)} onOpenPanel={openFinding} />
       )}
 
       {restoreOpen && (

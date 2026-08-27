@@ -272,6 +272,25 @@ def summary_for(username: str) -> dict:
                                    "scanned_at": None}
 
 
+def _row_routing(username: str, repo: str, entry: dict) -> tuple[str | None, dict]:
+    """(full_name, browse) for a finding row, with sensible fallbacks so
+    results produced by an older scan (before routing metadata existed) still
+    get working jump targets without forcing a rescan."""
+    full = entry.get("full_name")
+    browse = entry.get("browse")
+    if not browse:
+        if repo.startswith("gist:"):
+            browse = {"gist": repo[5:]}
+        elif "/" in repo:
+            owner, name = repo.split("/", 1)
+            browse = {"name": name, "owner": owner, "src": "starred"}
+        else:
+            browse = {"name": repo, "owner": "", "src": ""}
+    if not full and not repo.startswith("gist:"):
+        full = repo if "/" in repo else f"{username}/{repo}"
+    return full, browse
+
+
 def results_for(username: str, limit: int = 200) -> dict:
     """Stored results for the panel, split by scope: the user's own repos
     (their leak to fix, urgent) vs starred third-party clones (informational —
@@ -285,9 +304,10 @@ def results_for(username: str, limit: int = 200) -> dict:
         sc = scopes[entry.get("scope") or "own"]
         sc["repos"] += 1
         sc["total"] += len(fs)
+        full, browse = _row_routing(username, repo, entry)
         for f in fs:
-            sc["findings"].append({"repo": repo, "full_name": entry.get("full_name"),
-                                   "browse": entry.get("browse"), **f})
+            sc["findings"].append({"repo": repo, "full_name": full,
+                                   "browse": browse, **f})
     s = data.get("summary") or {}
     truncated = bool(s.get("truncated"))
     for sc in scopes.values():
@@ -314,6 +334,60 @@ def _mirror_dir(d: Path) -> Path | None:
     if (d / "HEAD").exists():
         return d
     return None
+
+
+_SAFE_PART = re.compile(r"^[\w.\-]+$")
+_REVEAL_MAX_BLOB = 20 * 1024 * 1024   # refuse to read absurdly large files
+
+
+def reveal(username: str, req: dict) -> dict:
+    """Read ONE flagged line straight from the backed-up mirror, on demand.
+
+    The scan never stores the secret itself — this is the explicit "show me the
+    value" action behind the eye button. The value is returned to the caller
+    and still never persisted anywhere. Raises ValueError on anything invalid.
+    """
+    file = (req.get("file") or "").strip()
+    try:
+        line = int(req.get("line") or 0)
+    except (TypeError, ValueError):
+        line = 0
+    if not file or line <= 0 or file.startswith(("/", "-")) or ".." in file or "\x00" in file:
+        raise ValueError("geçersiz istek")
+
+    browse = req.get("browse") or {}
+    cur = config.BACKUPS_DIR / username / "current"
+    if browse.get("gist"):
+        gid = str(browse["gist"])
+        if not _SAFE_PART.match(gid):
+            raise ValueError("geçersiz istek")
+        d = cur / "gists" / gid
+    elif browse.get("src") == "starred" and browse.get("owner"):
+        owner, name = str(browse.get("owner")), str(browse.get("name") or "")
+        if not (_SAFE_PART.match(owner) and _SAFE_PART.match(name)):
+            raise ValueError("geçersiz istek")
+        d = cur / "starred" / owner / name
+    else:
+        name = str(browse.get("name") or "")
+        if not _SAFE_PART.match(name):
+            raise ValueError("geçersiz istek")
+        d = cur / "repositories" / name
+    gd = _mirror_dir(d)
+    if not gd:
+        raise ValueError("repo bulunamadı")
+
+    size_r = _git(gd, "cat-file", "-s", f"HEAD:{file}", timeout=30)
+    if size_r.returncode != 0:
+        raise ValueError("dosya bulunamadı")
+    if int(size_r.stdout.decode().strip() or "0") > _REVEAL_MAX_BLOB:
+        raise ValueError("dosya çok büyük")
+    show = _git(gd, "show", f"HEAD:{file}", timeout=60)
+    if show.returncode != 0:
+        raise ValueError("dosya okunamadı")
+    lines = show.stdout.decode(errors="replace").splitlines()
+    if line > len(lines):
+        raise ValueError("satır bulunamadı")
+    return {"text": lines[line - 1][:1000]}
 
 
 def _scan_targets(username: str) -> list[tuple[str, Path, str, dict]]:
