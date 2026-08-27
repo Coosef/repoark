@@ -17,7 +17,27 @@ const LANG_COLORS = {
 };
 const langColor = (l) => LANG_COLORS[l] || "var(--muted)";
 
-export default function RepoBrowser({ accountId, repo, owner = "", src = "", fullName, initialPath, onClose }) {
+// File content with line numbers, scrolled to and highlighting one target
+// line — used when jumping to a secret-scan finding.
+function CodeWithLine({ text, line }) {
+  const hitRef = useRef(null);
+  useEffect(() => {
+    hitRef.current?.scrollIntoView({ block: "center" });
+  }, [text, line]);
+  return (
+    <div className="code lines">
+      {(text || "").split("\n").map((ln, i) => (
+        <div key={i} ref={i + 1 === line ? hitRef : null}
+          className={`code-line${i + 1 === line ? " hit" : ""}`}>
+          <span className="lnum">{i + 1}</span>
+          <span className="ltext">{ln}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function RepoBrowser({ accountId, repo, owner = "", src = "", fullName, initialPath, initialLine, onClose }) {
   const { t } = useLang();
   const isStarred = src === "starred";       // a "download all starred" clone
   const title = fullName || repo;
@@ -57,7 +77,7 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
     setSecModal(null);
     setView("files");
     api.blob(accountId, repo, ref || "HEAD", f.file, owner, src)
-      .then((b) => setFile({ path: f.file, blob: b }))
+      .then((b) => setFile({ path: f.file, blob: b, line: f.line || null }))
       .catch(() => {});
   }
 
@@ -131,10 +151,10 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
         .then((tr) => { setTree(tr); setPath(dir); })
         .catch(() => {});
       api.blob(accountId, repo, ref, initialPath, owner, src)
-        .then((b) => setFile({ path: initialPath, blob: b }))
+        .then((b) => setFile({ path: initialPath, blob: b, line: initialLine || null }))
         .catch(() => loadTree(""));
     }
-  }, [ref, initialPath, openedInitial, accountId, repo, owner, src, loadTree]);
+  }, [ref, initialPath, initialLine, openedInitial, accountId, repo, owner, src, loadTree]);
 
   function openFile(name) {
     const full = path ? `${path}/${name}` : name;
@@ -413,7 +433,9 @@ export default function RepoBrowser({ accountId, repo, owner = "", src = "", ful
           ) : (
             <>
               {file.blob.truncated && <div className="muted mb">{t("repo.truncated")}</div>}
-              <pre className="code">{file.blob.text}</pre>
+              {file.line
+                ? <CodeWithLine text={file.blob.text} line={file.line} />
+                : <pre className="code">{file.blob.text}</pre>}
             </>
           )}
         </div>

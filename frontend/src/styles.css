@@ -311,6 +311,12 @@ tr.clickable:hover td { background: var(--hover); }
   overflow: auto; max-height: 540px; font-size: 12.5px; line-height: 1.6;
   font-family: ui-monospace, "SF Mono", Menlo, monospace; white-space: pre;
 }
+/* Line-numbered variant, used when jumping to a specific (flagged) line. */
+.code.lines { padding: 12px 0; }
+.code-line { display: flex; padding: 0 16px 0 0; }
+.code-line .lnum { width: 52px; flex-shrink: 0; text-align: right; padding-right: 14px; color: var(--muted); user-select: none; }
+.code-line .ltext { white-space: pre; }
+.code-line.hit { background: rgba(255,45,85,.12); box-shadow: inset 3px 0 0 var(--pink); }
 
 /* ---------- Issue / PR ---------- */
 .state { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: .3px; }

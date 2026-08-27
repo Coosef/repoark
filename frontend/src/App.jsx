@@ -135,7 +135,7 @@ export default function App() {
     const b = f.browse || {};
     if (b.gist) setContentFocus({ gist: b.gist });
     else setContentFocus({ name: b.name || f.repo, owner: b.owner || "", src: b.src || "",
-                           full_name: f.full_name, path: f.file });
+                           full_name: f.full_name, path: f.file, line: f.line || null });
     setTab("content");
   }
 

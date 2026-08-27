@@ -3,6 +3,13 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.21.0]
+### Added
+- **Jumping to a finding now lands on the exact line.** "Open in RepoArk" (and
+  clicking a finding in the repo's warning strip) opens the file with line
+  numbers, scrolls straight to the flagged line and highlights it — no more
+  hunting through the file after opening it.
+
 ## [1.20.0]
 ### Fixed
 - **The in-repo warning strip now actually shows up.** Opening a flagged repo

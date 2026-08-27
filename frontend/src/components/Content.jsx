@@ -51,7 +51,7 @@ export default function Content({ accountId, onMsg, focus, onFocusDone }) {
     if (!focus) return;
     if (focus.gist) setGist({ id: focus.gist, description: "" });
     else setRepo({ name: focus.name, owner: focus.owner, src: focus.src,
-                   full_name: focus.full_name, path: focus.path });
+                   full_name: focus.full_name, path: focus.path, line: focus.line });
     onFocusDone && onFocusDone();
   }, [focus]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -103,7 +103,7 @@ export default function Content({ accountId, onMsg, focus, onFocusDone }) {
   }
 
   if (!accountId) return <Empty>{t("dash.connectFirst")}</Empty>;
-  if (repo) return <RepoBrowser accountId={accountId} repo={repo.name} owner={repo.owner} src={repo.src} fullName={repo.full_name} initialPath={repo.path} onClose={() => setRepo(null)} />;
+  if (repo) return <RepoBrowser accountId={accountId} repo={repo.name} owner={repo.owner} src={repo.src} fullName={repo.full_name} initialPath={repo.path} initialLine={repo.line} onClose={() => setRepo(null)} />;
   if (gist) return <GistBrowser accountId={accountId} gid={gist.id} description={gist.description} onClose={() => setGist(null)} />;
   if (snapshot) return <SnapshotDetail accountId={accountId} name={snapshot} onClose={() => setSnapshot(null)} />;
 
