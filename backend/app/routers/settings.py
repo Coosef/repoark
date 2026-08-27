@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlmodel import Session, select
 
-from .. import backup, config, crypto, notify, scheduler
+from .. import backup, config, crypto, notify, scheduler, secscan
 from ..db import get_session
 from ..models import Account, Destination, Job, Run, Settings, utcnow
 from ..schemas import SettingsRead, SettingsUpdate
@@ -275,7 +275,19 @@ def alerts(session: Session = Depends(get_session)):
                 "never": last_at is None,
                 "last_success_at": last_at,
             })
-    return {"token": token_alerts, "failing": failing, "stale": stale}
+    # Secret leaks found inside the backed-up repos (from the last scan). Read
+    # from the stored summary — cheap enough for the dashboard's poll loop.
+    secrets = []
+    for acc in accounts_by_id.values():
+        s = secscan.summary_for(acc.username)
+        if s.get("total"):
+            secrets.append({
+                "account_id": acc.id, "username": acc.username,
+                "count": s["total"], "repos": s.get("repos_with_findings", 0),
+                "scanned_at": s.get("scanned_at"),
+            })
+    return {"token": token_alerts, "failing": failing, "stale": stale,
+            "secrets": secrets}
 
 
 @router.get("/storage")

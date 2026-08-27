@@ -1,0 +1,125 @@
+"""Secret scanning of backed-up mirrors: detection, masking, exclusions."""
+import json
+import subprocess
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from app import config, db, secscan
+from app.main import app
+from app.models import Account
+
+FAKE_AWS = "AKIAIOSFODNN7EXAMPLE"          # canonical AWS docs example key
+FAKE_GH = "ghp_" + "a1B2c3D4e5F6g7H8i9J0" * 2   # 40-char body
+
+
+def _run(*cmd, cwd=None):
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True)
+    assert r.returncode == 0, r.stderr.decode()
+    return r
+
+
+def _make_mirror(work: Path, mirror: Path, files: dict[str, str]) -> None:
+    """Commit `files` in a scratch repo and bare-clone it to `mirror`."""
+    work.mkdir(parents=True, exist_ok=True)
+    _run("git", "init", "-q", str(work))
+    for name, content in files.items():
+        p = work / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+    _run("git", "-C", str(work), "add", "-A")
+    _run("git", "-c", "user.email=t@t", "-c", "user.name=t",
+         "-C", str(work), "commit", "-q", "-m", "x")
+    mirror.parent.mkdir(parents=True, exist_ok=True)
+    _run("git", "clone", "-q", "--bare", str(work), str(mirror))
+
+
+def _setup_account(tmp_path: Path, username: str, repos: dict[str, dict[str, str]],
+                   own_names=None) -> None:
+    cur = config.BACKUPS_DIR / username / "current"
+    for repo, files in repos.items():
+        _make_mirror(tmp_path / f"work-{repo}",
+                     cur / "repositories" / repo / "repository", files)
+    if own_names is not None:
+        (cur / "account").mkdir(parents=True, exist_ok=True)
+        (cur / "account" / "repos.json").write_text(
+            json.dumps([{"name": n} for n in own_names]))
+
+
+def test_scan_finds_and_masks_secrets(tmp_path):
+    _setup_account(tmp_path, "scanuser", {
+        "leaky": {
+            ".env": f"AWS_KEY={FAKE_AWS}\nDB_PASSWORD='supersecret42'\n",
+            "config.json": '{"api_key": "changeme"}\n',        # placeholder
+            "keys/id_rsa": "-----BEGIN OPENSSH PRIVATE KEY-----\nzzz\n",
+            "src/app.py": f'gh = "{FAKE_GH}"\n',
+            "README.md": "set PASSWORD in your env\n",          # no value: clean
+        },
+    })
+    res = secscan.scan_account("scanuser")
+    kinds = {f["kind"] for f in res["findings"]}
+    assert {"aws_key", "github_token", "private_key",
+            "credential_assign", "risky_file"} <= kinds
+    blob = json.dumps(res)
+    # The actual secrets must never appear in the results — masked previews only.
+    assert FAKE_AWS not in blob and FAKE_GH not in blob and "supersecret42" not in blob
+    assert "changeme" not in blob                       # placeholder not flagged
+    # Persisted for the alerts endpoint.
+    s = secscan.summary_for("scanuser")
+    assert s["total"] == len(res["findings"]) and s["repos_with_findings"] == 1
+
+
+def test_clean_repo_and_env_template_have_no_findings(tmp_path):
+    _setup_account(tmp_path, "cleanuser", {
+        "tidy": {
+            ".env.example": "DB_PASSWORD='fill-me-in'\n",
+            "main.py": "print('hello')\n",
+            "docs/setup.md": "export TOKEN=... then run\n",
+        },
+    })
+    res = secscan.scan_account("cleanuser")
+    assert res["total"] == 0 and res["findings"] == []
+
+
+def test_starred_clones_are_not_scanned(tmp_path):
+    # repos.json marks 'mine' as owned; 'thirdparty' (a selected-starred clone
+    # in the same folder) must be skipped even though it contains a key.
+    _setup_account(tmp_path, "ownuser", {
+        "mine": {"a.txt": "nothing here\n"},
+        "thirdparty": {".env": f"KEY={FAKE_AWS}\n"},
+    }, own_names=["mine"])
+    res = secscan.scan_account("ownuser")
+    assert res["total"] == 0
+    assert all(f["repo"] != "thirdparty" for f in res["findings"])
+
+
+def test_cache_skips_unchanged_head(tmp_path, monkeypatch):
+    _setup_account(tmp_path, "cacheuser", {"r1": {".env": "X_PASSWORD='topsecret99'\n"}})
+    first = secscan.scan_account("cacheuser")
+    assert first["total"] == 2      # risky .env file + the password inside it
+    calls = []
+    real = secscan.scan_repo
+    monkeypatch.setattr(secscan, "scan_repo", lambda gd: calls.append(gd) or real(gd))
+    second = secscan.scan_account("cacheuser")
+    assert second["total"] == 2 and calls == []      # HEAD unchanged: no rescan
+    forced = secscan.scan_account("cacheuser", force=True)
+    assert forced["total"] == 2 and len(calls) == 1  # force rescans
+
+
+def test_endpoints_and_alert(tmp_path):
+    db.init_db()
+    with db.new_session() as s:
+        acc = Account(username="apiuser", token_enc="x")
+        s.add(acc)
+        s.commit()
+        s.refresh(acc)
+        aid = acc.id
+    _setup_account(tmp_path, "apiuser", {"web": {".env": f"K={FAKE_AWS}\n"}})
+    with TestClient(app) as client:
+        r = client.post(f"/api/accounts/{aid}/secret-scan", json={})
+        assert r.status_code == 200 and r.json()["total"] >= 1
+        r = client.get(f"/api/accounts/{aid}/secret-scan")
+        assert r.status_code == 200 and r.json()["total"] >= 1
+        alerts = client.get("/api/alerts").json()
+        assert any(a["username"] == "apiuser" and a["count"] >= 1
+                   for a in alerts.get("secrets", []))

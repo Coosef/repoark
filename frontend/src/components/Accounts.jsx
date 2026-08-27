@@ -90,6 +90,20 @@ export default function Accounts({ accounts, jobs, onRefresh, onAddJob, onMsg })
   const { confirm, promptSecret } = useDialog();
   const [drilling, setDrilling] = useState(0);
   const [pruning, setPruning] = useState(0);
+  const [scanning, setScanning] = useState(0);
+
+  async function secScan(acc) {
+    setScanning(acc.id);
+    onMsg(t("scan.scanning"));
+    try {
+      const r = await api.runSecretScan(acc.id);
+      onMsg(r.total > 0 ? t("scan.foundToast", { n: r.total }) : t("scan.none"));
+    } catch (e) {
+      onMsg(t("toast.error", { msg: e.message }));
+    } finally {
+      setScanning(0);
+    }
+  }
 
   async function pruneUnstarred(acc) {
     setPruning(acc.id);
@@ -175,6 +189,9 @@ export default function Accounts({ accounts, jobs, onRefresh, onAddJob, onMsg })
               </button>
               <button className="link" onClick={() => pruneUnstarred(a)} disabled={pruning === a.id}>
                 {pruning === a.id ? t("common.loading") : t("acc.pruneUnstarred")}
+              </button>
+              <button className="link" onClick={() => secScan(a)} disabled={scanning === a.id}>
+                {scanning === a.id ? t("scan.scanning") : t("acc.secScan")}
               </button>
               <button className="link" onClick={() => updateToken(a)}>{t("acc.updateToken")}</button>
               <button className="link danger" onClick={() => remove(a)}>{t("common.remove")}</button>

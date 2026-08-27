@@ -15,7 +15,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from .. import config, crypto, github, health
+from .. import config, crypto, github, health, secscan
 from ..db import get_session
 from ..models import Account, Job, Run
 from ..schemas import DeleteReposBody, PruneBody
@@ -91,6 +91,24 @@ def restore_drill(account_id: int, session: Session = Depends(get_session)):
     temp dir), so the user can confirm the backup is usable — not just present."""
     account = _account(account_id, session)
     return health.restore_drill(account.username)
+
+
+@router.get("/{account_id}/secret-scan")
+def secret_scan_results(account_id: int, session: Session = Depends(get_session)):
+    """Last stored secret-scan findings (masked previews only)."""
+    account = _account(account_id, session)
+    return secscan.results_for(account.username)
+
+
+@router.post("/{account_id}/secret-scan")
+def secret_scan_run(account_id: int, payload: dict | None = None,
+                    session: Session = Depends(get_session)):
+    """Scan the account's own backed-up repos for committed secrets now.
+
+    Cached per repo on HEAD; pass {"force": true} to rescan everything."""
+    account = _account(account_id, session)
+    force = bool((payload or {}).get("force"))
+    return secscan.scan_account(account.username, force=force)
 
 
 @router.get("/{account_id}/summary")

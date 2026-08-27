@@ -63,6 +63,9 @@ export const api = {
   restoreDrill: (id) => req("POST", `/api/accounts/${id}/restore-drill`),
   // Reclaim space from 'download all starred' clones you no longer star.
   pruneUnstarred: (id) => req("POST", `/api/accounts/${id}/prune-unstarred`),
+  // Secret scan: committed .env / API keys / passwords in the backed-up repos.
+  secretScan: (id) => req("GET", `/api/accounts/${id}/secret-scan`),
+  runSecretScan: (id, force) => req("POST", `/api/accounts/${id}/secret-scan`, { force: !!force }),
   deleted: (id) => req("GET", `/api/accounts/${id}/deleted`),
 
   version: () => req("GET", "/api/health"),

@@ -3,6 +3,18 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.15.0]
+### Added
+- **Secret scanning.** RepoArk now scans your own backed-up repos for committed
+  credentials — `.env` files, private keys, AWS/GitHub/Slack/Google/Stripe-style
+  API keys, and password assignments in config files — and warns on the
+  dashboard with the exact repo, file and line. Runs automatically after each
+  successful backup (only changed repos are rescanned) and on demand from the
+  account card. Found values are always masked — the scan report never contains
+  the secret itself. Third-party starred clones are not scanned, and obvious
+  placeholders (`changeme`, `$VAR`, `.env.example`) are not flagged. A
+  notification is sent when a backup surfaces new findings.
+
 ## [1.14.0]
 ### Security
 - **Changing the panel password now invalidates all existing sessions.** Session

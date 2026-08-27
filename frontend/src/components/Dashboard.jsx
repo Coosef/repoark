@@ -29,6 +29,8 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
   const [healthInfo, setHealthInfo] = useState(null);
   const [healthBusy, setHealthBusy] = useState(false);
   const [changes, setChanges] = useState(null);
+  const [secrets, setSecrets] = useState(null);
+  const [secBusy, setSecBusy] = useState(false);
 
   const load = useCallback(() => {
     if (!accountId) return;
@@ -41,7 +43,21 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
     api.alerts().then(setAlerts).catch(() => {});
     api.health(accountId).then(setHealthInfo).catch(() => setHealthInfo(null));
     api.changes(accountId).then(setChanges).catch(() => setChanges(null));
+    api.secretScan(accountId).then(setSecrets).catch(() => setSecrets(null));
   }, [accountId]);
+
+  async function rescanSecrets() {
+    setSecBusy(true);
+    try {
+      const r = await api.runSecretScan(accountId, true);
+      setSecrets(r);
+      onMsg(r.total > 0 ? t("scan.foundToast", { n: r.total }) : t("scan.none"));
+    } catch (e) {
+      onMsg(t("toast.error", { msg: e.message }));
+    } finally {
+      setSecBusy(false);
+    }
+  }
 
   async function verifyHealth() {
     setHealthBusy(true);
@@ -185,6 +201,36 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
           </div>
         </div>
       ))}
+
+      {/* Secrets found inside the backed-up repos (masked previews) */}
+      {secrets && secrets.total > 0 && (
+        <div className="card" style={{ marginTop: 16, borderColor: "var(--pink)" }}>
+          <div className="row spread">
+            <h3>🔐 {t("scan.title")}</h3>
+            <button className="secondary" onClick={rescanSecrets} disabled={secBusy}>
+              {secBusy ? t("scan.scanning") : t("scan.scanNow")}
+            </button>
+          </div>
+          <div className="muted">
+            <b style={{ color: "var(--pink)" }}>{t("scan.summary", { n: secrets.total, repos: secrets.repos_with_findings })}</b>
+            {" — "}{t("scan.sub")}
+          </div>
+          <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+            {secrets.findings.slice(0, 15).map((f, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                <span className="pill">{t("scan.kind." + f.label)}</span>
+                <span style={{ fontFamily: "ui-monospace, SFMono-Regular, monospace", fontSize: 12, overflowWrap: "anywhere" }}>
+                  <b>{f.repo}</b> · {f.file}{f.line ? `:${f.line}` : ""}{f.preview ? ` · ${f.preview}` : ""}
+                </span>
+              </div>
+            ))}
+            {secrets.findings.length > 15 && <div className="muted">{t("scan.more", { n: secrets.total - 15 })}</div>}
+          </div>
+          <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+            {t("scan.note")}{secrets.scanned_at ? ` · ${t("scan.last", { date: datetime(secrets.scanned_at) })}` : ""}
+          </div>
+        </div>
+      )}
 
       {/* Running banner */}
       {running && (

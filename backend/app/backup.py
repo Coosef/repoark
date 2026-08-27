@@ -24,7 +24,7 @@ from pathlib import Path
 
 from sqlmodel import Session, select
 
-from . import config, crypto, engine, github, health, notify, progress, sync
+from . import config, crypto, engine, github, health, notify, progress, secscan, sync
 from .models import Account, Job, Run, utcnow
 
 log = logging.getLogger("backup")
@@ -247,6 +247,20 @@ def _finalize(session: Session, account: Account, job: Job, run: Run, *, prune: 
                 pass
         try:
             health.update_account_health(session, account)
+        except Exception:
+            pass
+        # Secret scan on the fresh backup (cached per repo — only changed repos
+        # are rescanned). Notify when NEW findings appeared since the last scan.
+        try:
+            prev_total = secscan.summary_for(account.username).get("total", 0)
+            res = secscan.scan_account(account.username)
+            if res["total"] > prev_total:
+                s = notify.get_settings(session)
+                notify.send(
+                    s, "🔐 Sızıntı uyarısı",
+                    f"@{account.username} yedeğinde {res['total']} olası gizli "
+                    f"bilgi bulundu (önceki taramada {prev_total}). "
+                    f"Ayrıntılar panelde.")
         except Exception:
             pass
         try:
