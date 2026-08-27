@@ -112,6 +112,27 @@ _SCAN_FILE = "secret_scan.json"
 
 _scan_lock = threading.Lock()
 
+# Live scan progress per username, so the panel can show "X/Y repos · current"
+# instead of a silent busy button. Written by scan_account, read by the API.
+_progress: dict[str, dict] = {}
+
+
+def progress_for(username: str) -> dict:
+    p = _progress.get(username)
+    return dict(p) if p else {"running": False, "done": 0, "total": 0, "current": ""}
+
+
+def start_scan_async(username: str, force: bool = False) -> bool:
+    """Kick off a scan in a background thread (a full starred tree can take
+    minutes — too long for one HTTP request). Returns False if one is already
+    running for this user. The panel then polls results (which carry progress)."""
+    p = _progress.get(username)
+    if p and p.get("running"):
+        return False
+    _progress[username] = {"running": True, "done": 0, "total": 0, "current": ""}
+    threading.Thread(target=scan_account, args=(username, force), daemon=True).start()
+    return True
+
 
 def _mask(secret: str) -> str:
     """A safe preview: a few leading characters + the length. Never the value."""
@@ -271,6 +292,7 @@ def results_for(username: str, limit: int = 200) -> dict:
     for sc in scopes.values():
         truncated = truncated or len(sc["findings"]) > limit
         sc["findings"] = sc["findings"][:limit]
+    prog = progress_for(username)
     return {
         "scanned_at": s.get("scanned_at"),
         "repos_scanned": s.get("repos_scanned", 0),
@@ -278,6 +300,8 @@ def results_for(username: str, limit: int = 200) -> dict:
         "own": scopes["own"],
         "starred": scopes["starred"],
         "truncated": truncated,
+        "running": bool(prog.get("running")),
+        "progress": prog,
     }
 
 
@@ -355,23 +379,30 @@ def scan_account(username: str, force: bool = False) -> dict:
         repos_out: dict[str, dict] = {}
         truncated = False
 
-        for name, git_dir, scope in _scan_targets(username):
-            cached = prev_repos.get(name)
-            if cached and not force:
-                head_r = _git(git_dir, "rev-parse", "HEAD", timeout=30)
-                head = head_r.stdout.decode().strip() if head_r.returncode == 0 else None
-                if head and head == cached.get("head"):
-                    cached["scope"] = scope   # scope can change (e.g. un-starred)
-                    repos_out[name] = cached
-                    truncated = truncated or bool(cached.get("truncated"))
-                    continue
-            try:
-                res = scan_repo(git_dir)
-            except Exception:
-                continue    # one broken mirror must not kill the whole scan
-            res["scope"] = scope
-            repos_out[name] = res
-            truncated = truncated or res["truncated"]
+        targets = _scan_targets(username)
+        prog = _progress.setdefault(username, {})
+        prog.update(running=True, done=0, total=len(targets), current="")
+        try:
+            for i, (name, git_dir, scope) in enumerate(targets):
+                prog.update(done=i, current=name)
+                cached = prev_repos.get(name)
+                if cached and not force:
+                    head_r = _git(git_dir, "rev-parse", "HEAD", timeout=30)
+                    head = head_r.stdout.decode().strip() if head_r.returncode == 0 else None
+                    if head and head == cached.get("head"):
+                        cached["scope"] = scope   # scope can change (e.g. un-starred)
+                        repos_out[name] = cached
+                        truncated = truncated or bool(cached.get("truncated"))
+                        continue
+                try:
+                    res = scan_repo(git_dir)
+                except Exception:
+                    continue    # one broken mirror must not kill the whole scan
+                res["scope"] = scope
+                repos_out[name] = res
+                truncated = truncated or res["truncated"]
+        finally:
+            prog.update(running=False, done=len(targets), current="")
 
         own_total = sum(len(e["findings"]) for e in repos_out.values()
                         if e.get("scope") != "starred")

@@ -91,14 +91,25 @@ export default function Accounts({ accounts, jobs, onRefresh, onAddJob, onMsg })
   const [drilling, setDrilling] = useState(0);
   const [pruning, setPruning] = useState(0);
   const [scanning, setScanning] = useState(0);
+  const [scanState, setScanState] = useState(null); // {id, p} while running, {id, done, ...} after
 
+  // Start the background scan, then poll so the card shows live "X/Y · repo"
+  // progress and a persistent result line when it finishes.
   async function secScan(acc) {
     setScanning(acc.id);
-    onMsg(t("scan.scanning"));
+    setScanState({ id: acc.id, p: null });
     try {
-      const r = await api.runSecretScan(acc.id);
+      let r = await api.runSecretScan(acc.id);
+      while (r.running) {
+        setScanState({ id: acc.id, p: r.progress });
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        r = await api.secretScan(acc.id);
+      }
+      setScanState({ id: acc.id, done: true, own: r.own?.total || 0,
+                     starred: r.starred?.total || 0, scanned: r.repos_scanned });
       onMsg(r.total > 0 ? t("scan.foundToast", { n: r.total }) : t("scan.none"));
     } catch (e) {
+      setScanState(null);
       onMsg(t("toast.error", { msg: e.message }));
     } finally {
       setScanning(0);
@@ -196,6 +207,19 @@ export default function Accounts({ accounts, jobs, onRefresh, onAddJob, onMsg })
               <button className="link" onClick={() => updateToken(a)}>{t("acc.updateToken")}</button>
               <button className="link danger" onClick={() => remove(a)}>{t("common.remove")}</button>
             </div>
+            {scanState?.id === a.id && !scanState.done && (
+              <p className="muted">
+                <span className="spinner" style={{ marginRight: 6 }} />
+                {scanState.p?.total > 0
+                  ? t("scan.progress", { done: scanState.p.done, total: scanState.p.total, repo: scanState.p.current || "…" })
+                  : t("scan.scanning")}
+              </p>
+            )}
+            {scanState?.id === a.id && scanState.done && (
+              <p className="muted" style={{ color: (scanState.own + scanState.starred) > 0 ? "var(--amber)" : "var(--green)" }}>
+                ✓ {t("scan.scannedCount", { n: scanState.scanned })} · {t("scan.result", { own: scanState.own, starred: scanState.starred })}
+              </p>
+            )}
           </div>
         );
       })}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { api } from "../api.js";
 import { bytes, relative, datetime } from "../lib/format.js";
 import { LineChart, Empty } from "./ui.jsx";
@@ -80,18 +80,33 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
     api.secretScan(accountId).then(setSecrets).catch(() => setSecrets(null));
   }, [accountId]);
 
+  // The scan runs in the background on the server; here we just start it —
+  // the poll effect below shows live progress and announces the result.
   async function rescanSecrets() {
     setSecBusy(true);
     try {
-      const r = await api.runSecretScan(accountId, true);
-      setSecrets(r);
-      onMsg(r.total > 0 ? t("scan.foundToast", { n: r.total }) : t("scan.none"));
+      setSecrets(await api.runSecretScan(accountId, true));
     } catch (e) {
       onMsg(t("toast.error", { msg: e.message }));
     } finally {
       setSecBusy(false);
     }
   }
+
+  // While a scan runs, poll faster than the page's 4s refresh so the progress
+  // bar feels live; when it flips to done, announce the outcome once.
+  const prevScanRunning = useRef(false);
+  useEffect(() => {
+    if (prevScanRunning.current && secrets && !secrets.running) {
+      onMsg(secrets.total > 0 ? t("scan.foundToast", { n: secrets.total }) : t("scan.none"));
+    }
+    prevScanRunning.current = !!secrets?.running;
+    if (!secrets?.running) return;
+    const id = setInterval(() => {
+      api.secretScan(accountId).then(setSecrets).catch(() => {});
+    }, 1500);
+    return () => clearInterval(id);
+  }, [secrets?.running, accountId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   async function verifyHealth() {
     setHealthBusy(true);
@@ -236,6 +251,40 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
         </div>
       ))}
 
+      {/* Secret scan running: a live progress card so a long starred-tree
+          scan is never a silent busy button. */}
+      {secrets?.running && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="card-lead"><span className="spinner" /><b>🔐 {t("scan.progressTitle")}</b></div>
+          {secrets.progress?.total > 0 && (
+            <>
+              <div className="storagebar" style={{ marginTop: 12 }}>
+                <div style={{ width: `${Math.round(100 * secrets.progress.done / secrets.progress.total)}%`, background: "var(--accent)" }} />
+              </div>
+              <div className="muted" style={{ marginTop: 6 }}>
+                {t("scan.progress", { done: secrets.progress.done, total: secrets.progress.total, repo: secrets.progress.current || "…" })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Scan done and clean: a persistent green result so "no news" is
+          visibly good news, not a missing card. */}
+      {secrets && !secrets.running && secrets.total === 0 && secrets.scanned_at && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="row spread">
+            <div>
+              <b style={{ color: "var(--green)" }}>🔐 {t("scan.none")}</b>{" "}
+              <span className="muted">
+                — {t("scan.scannedCount", { n: secrets.repos_scanned })} · {t("scan.last", { date: datetime(secrets.scanned_at) })}
+              </span>
+            </div>
+            <button className="secondary" onClick={rescanSecrets} disabled={secBusy || secrets.running}>{t("scan.scanNow")}</button>
+          </div>
+        </div>
+      )}
+
       {/* Secrets found inside the backed-up repos (masked previews), in two
           separate cards so the user's own leaks never mix with third-party
           starred clones: own = red/urgent, starred = amber/informational. */}
@@ -243,7 +292,7 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
         <div className="card" style={{ marginTop: 16, borderColor: "var(--pink)" }}>
           <div className="row spread">
             <h3>🔐 {t("scan.title")}</h3>
-            <button className="secondary" onClick={rescanSecrets} disabled={secBusy}>
+            <button className="secondary" onClick={rescanSecrets} disabled={secBusy || secrets.running}>
               {secBusy ? t("scan.scanning") : t("scan.scanNow")}
             </button>
           </div>
@@ -262,7 +311,7 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
           <div className="row spread">
             <h3>⭐ {t("scan.starredTitle")}</h3>
             {!(secrets.own?.total > 0) && (
-              <button className="secondary" onClick={rescanSecrets} disabled={secBusy}>
+              <button className="secondary" onClick={rescanSecrets} disabled={secBusy || secrets.running}>
                 {secBusy ? t("scan.scanning") : t("scan.scanNow")}
               </button>
             )}

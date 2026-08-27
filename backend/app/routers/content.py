@@ -103,12 +103,18 @@ def secret_scan_results(account_id: int, session: Session = Depends(get_session)
 @router.post("/{account_id}/secret-scan")
 def secret_scan_run(account_id: int, payload: dict | None = None,
                     session: Session = Depends(get_session)):
-    """Scan the account's own backed-up repos for committed secrets now.
+    """Start a secret scan of the backed-up repos.
 
-    Cached per repo on HEAD; pass {"force": true} to rescan everything."""
+    Runs in the background (a full starred tree can take minutes) and returns
+    immediately with `running` + `progress`; the panel polls the GET endpoint
+    until done. Pass {"force": true} to ignore the per-repo HEAD cache, or
+    {"wait": true} to run synchronously (small trees / tests)."""
     account = _account(account_id, session)
     force = bool((payload or {}).get("force"))
-    return secscan.scan_account(account.username, force=force)
+    if (payload or {}).get("wait"):
+        return secscan.scan_account(account.username, force=force)
+    secscan.start_scan_async(account.username, force=force)
+    return secscan.results_for(account.username)
 
 
 @router.get("/{account_id}/summary")

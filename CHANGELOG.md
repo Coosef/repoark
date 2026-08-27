@@ -3,6 +3,16 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.17.0]
+### Changed
+- **The secret scan now shows what it's doing — and always shows a result.**
+  Scans run in the background with a live progress bar ("X/Y repos scanned ·
+  now: repo") on the dashboard and a progress line on the account card, instead
+  of a silent busy button. When it finishes you get the outcome either way: the
+  finding cards as before, or — when everything is clean — a persistent green
+  "No secrets found ✓ · N repos scanned · last scan" card, plus a result line
+  ("your repos X · starred Y") on the account card.
+
 ## [1.16.0]
 ### Changed
 - **Secret scanning now covers starred repos too — in a separate card.** Your

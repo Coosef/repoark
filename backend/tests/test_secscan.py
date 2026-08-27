@@ -1,6 +1,7 @@
 """Secret scanning of backed-up mirrors: detection, masking, exclusions."""
 import json
 import subprocess
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -127,6 +128,22 @@ def test_cache_skips_unchanged_head(tmp_path, monkeypatch):
     assert forced["total"] == 2 and len(calls) == 1  # force rescans
 
 
+def test_progress_and_async_scan(tmp_path):
+    _setup_account(tmp_path, "proguser", {"p1": {".env": "P_PASSWORD='longpassword12'\n"}})
+    secscan.scan_account("proguser")
+    p = secscan.progress_for("proguser")
+    assert p["running"] is False and p["done"] == p["total"] >= 1
+    assert secscan.results_for("proguser")["running"] is False
+    # Background start returns immediately, then finishes on its own.
+    assert secscan.start_scan_async("proguser") is True
+    for _ in range(200):
+        if not secscan.progress_for("proguser")["running"]:
+            break
+        time.sleep(0.05)
+    assert secscan.progress_for("proguser")["running"] is False
+    assert secscan.results_for("proguser")["total"] == 2
+
+
 def test_endpoints_and_alert(tmp_path):
     db.init_db()
     with db.new_session() as s:
@@ -137,7 +154,7 @@ def test_endpoints_and_alert(tmp_path):
         aid = acc.id
     _setup_account(tmp_path, "apiuser", {"web": {".env": f"K={FAKE_AWS}\n"}})
     with TestClient(app) as client:
-        r = client.post(f"/api/accounts/{aid}/secret-scan", json={})
+        r = client.post(f"/api/accounts/{aid}/secret-scan", json={"wait": True})
         assert r.status_code == 200 and r.json()["total"] >= 1
         r = client.get(f"/api/accounts/{aid}/secret-scan")
         assert r.status_code == 200 and r.json()["total"] >= 1
