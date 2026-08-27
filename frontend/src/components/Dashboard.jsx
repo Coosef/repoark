@@ -8,6 +8,40 @@ import { useLang } from "../i18n.jsx";
 
 const RING_C = 2 * Math.PI * 63; // circumference for r=63
 
+// Secret-scan findings grouped per repo: a repo header, then each hit as
+// "file:line · masked preview" with a kind chip — so it's obvious exactly
+// which repo and where.
+function ScanFindings({ findings, t }) {
+  const groups = [];
+  const idx = {};
+  for (const f of findings) {
+    if (!(f.repo in idx)) { idx[f.repo] = groups.length; groups.push({ repo: f.repo, items: [] }); }
+    groups[idx[f.repo]].items.push(f);
+  }
+  const mono = { fontFamily: "ui-monospace, SFMono-Regular, monospace", fontSize: 12, overflowWrap: "anywhere" };
+  return (
+    <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+      {groups.slice(0, 8).map((g) => (
+        <div key={g.repo}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+            📁 {g.repo} <span className="muted" style={{ fontWeight: 400 }}>({g.items.length})</span>
+          </div>
+          <div style={{ display: "grid", gap: 4, paddingLeft: 12 }}>
+            {g.items.slice(0, 6).map((f, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                <span className="pill">{t("scan.kind." + f.label)}</span>
+                <span style={mono}>{f.file}{f.line ? `:${f.line}` : ""}{f.preview ? ` · ${f.preview}` : ""}</span>
+              </div>
+            ))}
+            {g.items.length > 6 && <div className="muted">{t("scan.more", { n: g.items.length - 6 })}</div>}
+          </div>
+        </div>
+      ))}
+      {groups.length > 8 && <div className="muted">{t("scan.more", { n: groups.length - 8 })}</div>}
+    </div>
+  );
+}
+
 function Check() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" className="chk-circle">
@@ -202,8 +236,10 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
         </div>
       ))}
 
-      {/* Secrets found inside the backed-up repos (masked previews) */}
-      {secrets && secrets.total > 0 && (
+      {/* Secrets found inside the backed-up repos (masked previews), in two
+          separate cards so the user's own leaks never mix with third-party
+          starred clones: own = red/urgent, starred = amber/informational. */}
+      {secrets && secrets.own?.total > 0 && (
         <div className="card" style={{ marginTop: 16, borderColor: "var(--pink)" }}>
           <div className="row spread">
             <h3>🔐 {t("scan.title")}</h3>
@@ -212,22 +248,32 @@ export default function Dashboard({ accountId, accounts, jobs, onRefresh, onMsg,
             </button>
           </div>
           <div className="muted">
-            <b style={{ color: "var(--pink)" }}>{t("scan.summary", { n: secrets.total, repos: secrets.repos_with_findings })}</b>
+            <b style={{ color: "var(--pink)" }}>{t("scan.summary", { n: secrets.own.total, repos: secrets.own.repos })}</b>
             {" — "}{t("scan.sub")}
           </div>
-          <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
-            {secrets.findings.slice(0, 15).map((f, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-                <span className="pill">{t("scan.kind." + f.label)}</span>
-                <span style={{ fontFamily: "ui-monospace, SFMono-Regular, monospace", fontSize: 12, overflowWrap: "anywhere" }}>
-                  <b>{f.repo}</b> · {f.file}{f.line ? `:${f.line}` : ""}{f.preview ? ` · ${f.preview}` : ""}
-                </span>
-              </div>
-            ))}
-            {secrets.findings.length > 15 && <div className="muted">{t("scan.more", { n: secrets.total - 15 })}</div>}
-          </div>
+          <ScanFindings findings={secrets.own.findings} t={t} />
           <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
             {t("scan.note")}{secrets.scanned_at ? ` · ${t("scan.last", { date: datetime(secrets.scanned_at) })}` : ""}
+          </div>
+        </div>
+      )}
+      {secrets && secrets.starred?.total > 0 && (
+        <div className="card" style={{ marginTop: 16, borderColor: "var(--amber)" }}>
+          <div className="row spread">
+            <h3>⭐ {t("scan.starredTitle")}</h3>
+            {!(secrets.own?.total > 0) && (
+              <button className="secondary" onClick={rescanSecrets} disabled={secBusy}>
+                {secBusy ? t("scan.scanning") : t("scan.scanNow")}
+              </button>
+            )}
+          </div>
+          <div className="muted">
+            <b style={{ color: "var(--amber)" }}>{t("scan.summary", { n: secrets.starred.total, repos: secrets.starred.repos })}</b>
+            {" — "}{t("scan.starredSub")}
+          </div>
+          <ScanFindings findings={secrets.starred.findings} t={t} />
+          <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+            {secrets.scanned_at ? t("scan.last", { date: datetime(secrets.scanned_at) }) : ""}
           </div>
         </div>
       )}

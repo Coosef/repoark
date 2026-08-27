@@ -239,61 +239,114 @@ def _read_json(path: Path, default):
         return default
 
 
+def _empty_scope() -> dict:
+    return {"total": 0, "repos": 0, "findings": []}
+
+
 def summary_for(username: str) -> dict:
     """The stored summary (cheap — used by the alerts endpoint every poll)."""
     data = _read_json(_scan_path(username), {})
-    return data.get("summary") or {"total": 0, "repos_with_findings": 0,
-                                   "repos_scanned": 0, "scanned_at": None}
+    return data.get("summary") or {"total": 0, "own_total": 0, "starred_total": 0,
+                                   "repos_with_findings": 0, "repos_scanned": 0,
+                                   "scanned_at": None}
 
 
 def results_for(username: str, limit: int = 200) -> dict:
-    """Stored results flattened for the panel."""
+    """Stored results for the panel, split by scope: the user's own repos
+    (their leak to fix, urgent) vs starred third-party clones (informational —
+    they might want to warn the upstream developer)."""
     data = _read_json(_scan_path(username), {})
-    rows = []
+    scopes = {"own": _empty_scope(), "starred": _empty_scope()}
     for repo, entry in sorted((data.get("repos") or {}).items()):
-        for f in entry.get("findings", []):
-            rows.append({"repo": repo, **f})
+        fs = entry.get("findings", [])
+        if not fs:
+            continue
+        sc = scopes[entry.get("scope") or "own"]
+        sc["repos"] += 1
+        sc["total"] += len(fs)
+        for f in fs:
+            sc["findings"].append({"repo": repo, **f})
     s = data.get("summary") or {}
+    truncated = bool(s.get("truncated"))
+    for sc in scopes.values():
+        truncated = truncated or len(sc["findings"]) > limit
+        sc["findings"] = sc["findings"][:limit]
     return {
         "scanned_at": s.get("scanned_at"),
         "repos_scanned": s.get("repos_scanned", 0),
-        "repos_with_findings": s.get("repos_with_findings", 0),
-        "total": s.get("total", len(rows)),
-        "truncated": bool(s.get("truncated")) or len(rows) > limit,
-        "findings": rows[:limit],
+        "total": scopes["own"]["total"] + scopes["starred"]["total"],
+        "own": scopes["own"],
+        "starred": scopes["starred"],
+        "truncated": truncated,
     }
 
 
-def _own_repo_dirs(username: str) -> list[tuple[str, Path]]:
-    """Mirrors to scan: the account's own repos + own gists.
+def _mirror_dir(d: Path) -> Path | None:
+    """The bare git dir for a backed-up repo folder, tolerant of both layouts
+    (<repo>/repository from the engine, or <repo> itself being the mirror)."""
+    if (d / "repository" / "HEAD").exists():
+        return d / "repository"
+    if (d / "HEAD").exists():
+        return d
+    return None
 
-    repositories/ can also hold selected-starred clones; when repos.json (the
-    authoritative own-repo list) exists we scan only names on it. Third-party
-    code is never this user's leak to fix. current/starred/ is always skipped.
+
+def _scan_targets(username: str) -> list[tuple[str, Path, str]]:
+    """Every mirror to scan as (label, git_dir, scope).
+
+    own: the account's repos (per repos.json) + gists — the user's leaks.
+    starred: third-party clones — both "selected starred" clones that live in
+    repositories/ (names on starred.json) and the engine's --all-starred tree
+    at current/starred/<owner>/<repo>. Scanned informationally so the user can
+    warn the upstream developer. Duplicates are deduped by full name.
     """
     cur = config.BACKUPS_DIR / username / "current"
     owned = {r.get("name") for r in _read_json(cur / "account" / "repos.json", [])
              if r.get("name")}
-    out: list[tuple[str, Path]] = []
+    starred_by_name: dict[str, str] = {}
+    for r in _read_json(cur / "account" / "starred.json", []):
+        fn = r.get("full_name") or ""
+        if fn:
+            starred_by_name[fn.split("/")[-1]] = fn
+
+    out: list[tuple[str, Path, str]] = []
+    seen: set[str] = set()
     repos_root = cur / "repositories"
     if repos_root.is_dir():
         for d in sorted(repos_root.iterdir()):
-            gd = d / "repository"
-            if gd.is_dir() and (not owned or d.name in owned):
-                out.append((d.name, gd))
+            gd = _mirror_dir(d)
+            if not gd:
+                continue
+            if not owned or d.name in owned:
+                out.append((d.name, gd, "own"))
+                seen.add(d.name)
+            elif d.name in starred_by_name:
+                full = starred_by_name[d.name]
+                out.append((full, gd, "starred"))
+                seen.add(full)
     gists_root = cur / "gists"
     if gists_root.is_dir():
         for d in sorted(gists_root.iterdir()):
-            gd = d / "repository"
-            if gd.is_dir():
-                out.append((f"gist:{d.name}", gd))
+            gd = _mirror_dir(d)
+            if gd:
+                out.append((f"gist:{d.name}", gd, "own"))
+    starred_root = cur / "starred"
+    if starred_root.is_dir():
+        for owner_dir in sorted(starred_root.iterdir()):
+            if not owner_dir.is_dir():
+                continue
+            for repo_dir in sorted(owner_dir.iterdir()):
+                gd = _mirror_dir(repo_dir)
+                full = f"{owner_dir.name}/{repo_dir.name}"
+                if gd and full not in seen:
+                    out.append((full, gd, "starred"))
     return out
 
 
 def scan_account(username: str, force: bool = False) -> dict:
-    """Scan all of the account's own mirrors, reusing cached results for repos
-    whose HEAD hasn't moved. Persists to <account>/secret_scan.json and returns
-    the flattened results (same shape as results_for)."""
+    """Scan every backed-up mirror (own + starred), reusing cached results for
+    repos whose HEAD hasn't moved. Persists to <account>/secret_scan.json and
+    returns the results (same shape as results_for)."""
     from .models import utcnow   # local import: models pulls in sqlmodel
 
     with _scan_lock:
@@ -302,12 +355,13 @@ def scan_account(username: str, force: bool = False) -> dict:
         repos_out: dict[str, dict] = {}
         truncated = False
 
-        for name, git_dir in _own_repo_dirs(username):
+        for name, git_dir, scope in _scan_targets(username):
             cached = prev_repos.get(name)
             if cached and not force:
                 head_r = _git(git_dir, "rev-parse", "HEAD", timeout=30)
                 head = head_r.stdout.decode().strip() if head_r.returncode == 0 else None
                 if head and head == cached.get("head"):
+                    cached["scope"] = scope   # scope can change (e.g. un-starred)
                     repos_out[name] = cached
                     truncated = truncated or bool(cached.get("truncated"))
                     continue
@@ -315,17 +369,23 @@ def scan_account(username: str, force: bool = False) -> dict:
                 res = scan_repo(git_dir)
             except Exception:
                 continue    # one broken mirror must not kill the whole scan
+            res["scope"] = scope
             repos_out[name] = res
             truncated = truncated or res["truncated"]
 
-        total = sum(len(e["findings"]) for e in repos_out.values())
+        own_total = sum(len(e["findings"]) for e in repos_out.values()
+                        if e.get("scope") != "starred")
+        starred_total = sum(len(e["findings"]) for e in repos_out.values()
+                            if e.get("scope") == "starred")
         with_findings = sum(1 for e in repos_out.values() if e["findings"])
         data = {
             "summary": {
                 "scanned_at": utcnow().isoformat(),
                 "repos_scanned": len(repos_out),
                 "repos_with_findings": with_findings,
-                "total": total,
+                "total": own_total + starred_total,
+                "own_total": own_total,
+                "starred_total": starred_total,
                 "truncated": truncated,
             },
             "repos": repos_out,

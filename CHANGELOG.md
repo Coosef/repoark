@@ -3,6 +3,16 @@
 All notable changes to RepoArk are documented here. Versions match the
 `VERSION` file and the published image tag `ghcr.io/coosef/repoark:<version>`.
 
+## [1.16.0]
+### Changed
+- **Secret scanning now covers starred repos too — in a separate card.** Your
+  own repos' findings (red, urgent — your leak to fix, with notifications) are
+  never mixed with third-party starred clones (amber, informational — so you
+  can warn the upstream developer). Findings are now grouped per repository
+  with the exact file, line and masked preview under each repo header, so it's
+  obvious which repo and where. First starred scan of a large starred tree can
+  take a few minutes; later scans reuse the per-repo cache.
+
 ## [1.15.0]
 ### Added
 - **Secret scanning.** RepoArk now scans your own backed-up repos for committed

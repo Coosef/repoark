@@ -283,7 +283,10 @@ def alerts(session: Session = Depends(get_session)):
         if s.get("total"):
             secrets.append({
                 "account_id": acc.id, "username": acc.username,
-                "count": s["total"], "repos": s.get("repos_with_findings", 0),
+                "count": s["total"],
+                "own": s.get("own_total", s.get("total", 0)),
+                "starred": s.get("starred_total", 0),
+                "repos": s.get("repos_with_findings", 0),
                 "scanned_at": s.get("scanned_at"),
             })
     return {"token": token_alerts, "failing": failing, "stale": stale,

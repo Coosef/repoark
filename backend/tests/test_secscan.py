@@ -57,7 +57,7 @@ def test_scan_finds_and_masks_secrets(tmp_path):
         },
     })
     res = secscan.scan_account("scanuser")
-    kinds = {f["kind"] for f in res["findings"]}
+    kinds = {f["kind"] for f in res["own"]["findings"]}
     assert {"aws_key", "github_token", "private_key",
             "credential_assign", "risky_file"} <= kinds
     blob = json.dumps(res)
@@ -66,7 +66,7 @@ def test_scan_finds_and_masks_secrets(tmp_path):
     assert "changeme" not in blob                       # placeholder not flagged
     # Persisted for the alerts endpoint.
     s = secscan.summary_for("scanuser")
-    assert s["total"] == len(res["findings"]) and s["repos_with_findings"] == 1
+    assert s["own_total"] == len(res["own"]["findings"]) and s["repos_with_findings"] == 1
 
 
 def test_clean_repo_and_env_template_have_no_findings(tmp_path):
@@ -78,19 +78,40 @@ def test_clean_repo_and_env_template_have_no_findings(tmp_path):
         },
     })
     res = secscan.scan_account("cleanuser")
-    assert res["total"] == 0 and res["findings"] == []
+    assert res["total"] == 0
+    assert res["own"]["findings"] == [] and res["starred"]["findings"] == []
 
 
-def test_starred_clones_are_not_scanned(tmp_path):
-    # repos.json marks 'mine' as owned; 'thirdparty' (a selected-starred clone
-    # in the same folder) must be skipped even though it contains a key.
+def test_starred_clones_scanned_separately(tmp_path):
+    # 'mine' is the user's own repo; 'thirdparty' is a selected-starred clone
+    # in the same repositories/ folder. Its leak must land in the STARRED
+    # bucket (informational), never mixed into the user's own findings.
     _setup_account(tmp_path, "ownuser", {
         "mine": {"a.txt": "nothing here\n"},
         "thirdparty": {".env": f"KEY={FAKE_AWS}\n"},
     }, own_names=["mine"])
+    cur = config.BACKUPS_DIR / "ownuser" / "current"
+    (cur / "account" / "starred.json").write_text(
+        json.dumps([{"full_name": "dev/thirdparty"}]))
     res = secscan.scan_account("ownuser")
-    assert res["total"] == 0
-    assert all(f["repo"] != "thirdparty" for f in res["findings"])
+    assert res["own"]["total"] == 0
+    assert res["starred"]["total"] >= 1
+    assert all(f["repo"] == "dev/thirdparty" for f in res["starred"]["findings"])
+
+
+def test_all_starred_tree_is_scanned(tmp_path):
+    # The engine's --all-starred layout: current/starred/<owner>/<repo>/repository
+    _setup_account(tmp_path, "staruser", {"own1": {"a.txt": "clean\n"}},
+                   own_names=["own1"])
+    cur = config.BACKUPS_DIR / "staruser" / "current"
+    _make_mirror(tmp_path / "work-star",
+                 cur / "starred" / "acme" / "tool" / "repository",
+                 {".env": f"KEY={FAKE_AWS}\n"})
+    res = secscan.scan_account("staruser")
+    assert res["own"]["total"] == 0
+    assert res["starred"]["total"] >= 1
+    assert any(f["repo"] == "acme/tool" and f["kind"] == "aws_key"
+               for f in res["starred"]["findings"])
 
 
 def test_cache_skips_unchanged_head(tmp_path, monkeypatch):

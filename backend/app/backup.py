@@ -252,14 +252,17 @@ def _finalize(session: Session, account: Account, job: Job, run: Run, *, prune: 
         # Secret scan on the fresh backup (cached per repo — only changed repos
         # are rescanned). Notify when NEW findings appeared since the last scan.
         try:
-            prev_total = secscan.summary_for(account.username).get("total", 0)
+            prev = secscan.summary_for(account.username)
+            prev_own = prev.get("own_total", prev.get("total", 0))
             res = secscan.scan_account(account.username)
-            if res["total"] > prev_total:
+            # Notify only for the user's OWN repos — a leak they must fix.
+            # Starred (third-party) findings stay panel-only: informational.
+            if res["own"]["total"] > prev_own:
                 s = notify.get_settings(session)
                 notify.send(
                     s, "🔐 Sızıntı uyarısı",
-                    f"@{account.username} yedeğinde {res['total']} olası gizli "
-                    f"bilgi bulundu (önceki taramada {prev_total}). "
+                    f"@{account.username} yedeğinde {res['own']['total']} olası "
+                    f"gizli bilgi bulundu (önceki taramada {prev_own}). "
                     f"Ayrıntılar panelde.")
         except Exception:
             pass
